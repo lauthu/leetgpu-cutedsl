@@ -20,6 +20,12 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+node_modules/
+.leetgpu/
+session.json
+*.session.json
+.session-*.tmp
+receipts/
 
 # Generated compiler and profiler output
 .cache/

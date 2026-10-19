@@ -1,0 +1,92 @@
+{
+  "submissions": [
+    {
+      "id": "559e0dd5-89b3-4317-9071-a8f8ec823665",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-10-16T03:50:55.606791Z",
+      "challengeId": 1,
+      "metrics": {
+        "executionTime": 0.27299,
+        "percentile": 75.93
+      },
+      "sourceVersion": "v1_scalar.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "4b34ec1d8feb1ee081f920636aeeebf4826b2bd71f50d46ad6d6dd5c20c9a186",
+        "repositoryCode": "70b7c36d4fbbfd634dc233653ae0556d7d7f468b7d5770b434c7638275ed2a65"
+      },
+      "sourceMatch": {
+        "exactBytes": false,
+        "method": "python-ast-without-leading-module-docstring-and-location-attributes"
+      }
+    },
+    {
+      "id": "b1a7a640-cefc-4587-9eed-42ad0665e9a0",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-10-16T03:59:04.072815Z",
+      "challengeId": 1,
+      "metrics": {
+        "executionTime": 0.25513,
+        "percentile": 89.81
+      },
+      "sourceVersion": "v2_vectorized.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "a2c21f4d01f31ed9a4aacc2c01bfe1c2d6ac4f4f068e28fedfdd194f0bd07511",
+        "repositoryCode": "29bb66612a8edda112ca83966c0a23dc292cbc0f327cd1365ac30736af2d9da3"
+      },
+      "sourceMatch": {
+        "exactBytes": false,
+        "method": "repository-code-equals-submitted-code-plus-one-final-LF"
+      }
+    },
+    {
+      "id": "b0ab1892-3895-43e8-800a-fddcaa803643",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-10-19T05:31:19.018751Z",
+      "challengeId": 1,
+      "metrics": {
+        "executionTime": 0.23426,
+        "percentile": 97.22
+      },
+      "sourceVersion": "v2_vectorized.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "a2c21f4d01f31ed9a4aacc2c01bfe1c2d6ac4f4f068e28fedfdd194f0bd07511",
+        "repositoryCode": "29bb66612a8edda112ca83966c0a23dc292cbc0f327cd1365ac30736af2d9da3"
+      },
+      "sourceMatch": {
+        "exactBytes": false,
+        "method": "repository-code-equals-submitted-code-plus-one-final-LF"
+      }
+    },
+    {
+      "id": "cc137a0e-53b1-4145-863f-d1a3b239e4c9",
+      "language": "cute",
+      "accelerator": "B200",
+      "status": "success",
+      "createdAt": "2026-10-16T03:59:50.524294Z",
+      "challengeId": 1,
+      "metrics": {
+        "executionTime": 0.11134,
+        "percentile": 99.58
+      },
+      "sourceVersion": "v2_vectorized.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "a2c21f4d01f31ed9a4aacc2c01bfe1c2d6ac4f4f068e28fedfdd194f0bd07511",
+        "repositoryCode": "29bb66612a8edda112ca83966c0a23dc292cbc0f327cd1365ac30736af2d9da3"
+      },
+      "sourceMatch": {
+        "exactBytes": false,
+        "method": "repository-code-equals-submitted-code-plus-one-final-LF"
+      }
+    }
+  ]
+}
