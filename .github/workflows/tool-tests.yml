@@ -1,0 +1,40 @@
+name: Tool tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run tool tests without credentials or a GPU
+        run: node --test tools/leetgpu/*.test.mjs
+      - name: Check launcher syntax and help
+        run: |
+          sh -n tools/leetgpu/leetgpu
+          tools/leetgpu/leetgpu --help
+      - name: Parse solution Python syntax without importing CUDA
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+
+          for source in sorted(Path("solutions").rglob("*.py")):
+              ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+              print(f"Parsed {source}")
+          PY

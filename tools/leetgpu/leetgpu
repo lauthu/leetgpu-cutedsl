@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+leetgpu_node=${LEETGPU_NODE:-node}
+if ! command -v "$leetgpu_node" >/dev/null 2>&1 || ! "$leetgpu_node" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; then
+  echo 'Node.js 22 or newer is required. Install it on PATH or set LEETGPU_NODE to its executable.' >&2
+  exit 1
+fi
+exec "$leetgpu_node" "$(dirname "$0")/cli.mjs" "$@"
