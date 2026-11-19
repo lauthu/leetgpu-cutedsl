@@ -1,0 +1,52 @@
+{
+  // Thin wrappers over the Makefile, so the editor, a terminal and a coding
+  // agent all run the same commands. Cmd/Ctrl+Shift+B runs the default task.
+  "version": "2.0.0",
+  "presentation": {
+    "reveal": "always",
+    "panel": "dedicated",
+    "clear": true
+  },
+  "problemMatcher": [],
+  "tasks": [
+    {
+      "label": "LeetGPU: run current file (not a submission)",
+      "type": "shell",
+      "command": "make",
+      "args": ["run", "FILE=${relativeFile}"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "LeetGPU: submit current file (private, H100)",
+      "type": "shell",
+      "command": "make",
+      "args": ["submit", "FILE=${relativeFile}"],
+      "group": "build"
+    },
+    {
+      "label": "LeetGPU: history for this challenge",
+      "type": "shell",
+      "command": "make",
+      "args": ["history", "CHALLENGE=${fileDirnameBasename}"]
+    },
+    {
+      "label": "LeetGPU: login",
+      "type": "shell",
+      "command": "make",
+      "args": ["login"]
+    },
+    {
+      "label": "Check: lint, records, tool tests",
+      "type": "shell",
+      "command": "make",
+      "args": ["check"],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "Format Python sources",
+      "type": "shell",
+      "command": "make",
+      "args": ["fmt"]
+    }
+  ]
+}

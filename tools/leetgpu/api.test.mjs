@@ -72,3 +72,15 @@ test('table preserves zero runtime and strips terminal control characters', () =
   assert.match(text, /RUNTIME \(ms\)/);
   assert.ok(!text.includes('\x1b'));
 });
+
+test('challenge lookup matches title slugs in order and refuses ambiguous or malformed lists', async () => {
+  const { slugify, findChallenge } = await import('./api.mjs');
+  assert.equal(slugify('General Matrix Multiplication (GEMM)'), 'general-matrix-multiplication-gemm');
+  assert.equal(slugify('  Café — 2D  '), 'cafe-2d');
+  const list = { challenges: [{ id: 1, title: 'Vector Addition' }, { id: 2, title: 'Matrix Multiplication' }, null, { id: 3 }] };
+  assert.deepEqual(findChallenge(list, ['drafts', 'matrix-multiplication', 'vector-addition']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.equal(findChallenge(list, ['solutions', '', '---']), null);
+  assert.throws(() => findChallenge({ challenges: [{ id: 1, title: 'Same' }, { id: 2, title: 'same' }] }, ['same']), /More than one/u);
+  assert.throws(() => findChallenge({ challenges: [{ id: 0, title: 'Zero' }] }, ['zero']), /positive integer/u);
+  assert.throws(() => findChallenge({}, ['x']), /Unexpected challenges response/u);
+});

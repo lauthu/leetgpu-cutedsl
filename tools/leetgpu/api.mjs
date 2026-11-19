@@ -62,6 +62,29 @@ export function challengeId(value) {
   return String(value);
 }
 
+/** The website's URL slug for a title, which is also this repository's directory name. */
+export function slugify(value) {
+  return String(value ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Find one challenge by title slug. `names` are tried in order, so pass the
+ * nearest directory first; a name that matches nothing is skipped.
+ */
+export function findChallenge(payload, names) {
+  const rows = payload?.challenges;
+  if (!Array.isArray(rows)) throw new ApiError('Unexpected challenges response.');
+  for (const name of names) {
+    const slug = slugify(name);
+    if (!slug) continue;
+    const matches = rows.filter(row => row && typeof row.title === 'string' && slugify(row.title) === slug);
+    if (matches.length > 1) throw new ApiError(`More than one challenge is named ${slug}; pass --challenge ID.`);
+    if (matches.length === 1) return { id: challengeId(matches[0].id), title: matches[0].title, slug };
+  }
+  return null;
+}
+
 export function submissionRows(payload) {
   const rows = Array.isArray(payload) ? payload : payload?.submissions;
   if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {

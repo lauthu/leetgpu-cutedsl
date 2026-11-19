@@ -19,8 +19,9 @@ async function withFixture(action, { authenticated = true } = {}) {
   await mkdir(config);
   await mkdir(legacyConfig);
   const sessionPath = join(config, 'session.json');
+  // The file secret store keeps every test away from the real macOS Keychain.
   const env = { ...process.env, LEETGPU_CONFIG_DIR: config, LEETGPU_HISTORY_CONFIG_DIR: legacyConfig,
-    LEETGPU_DATA_DIR: data, LEETGPU_HISTORY_DATA_DIR: join(directory, 'legacy-data') };
+    LEETGPU_DATA_DIR: data, LEETGPU_HISTORY_DATA_DIR: join(directory, 'legacy-data'), LEETGPU_SECRET_STORE: 'file' };
   try {
     if (authenticated) await writeFile(sessionPath, JSON.stringify(session), { mode: 0o600 });
     return await action({ directory, config, legacyConfig, data, sessionPath, env });
@@ -108,7 +109,7 @@ test('stdin login saves only the access token and expiry in the preferred config
     const status = runFixture(fixture, ['status', '--json']);
     assert.equal(status.status, 0);
     assert.deepEqual(JSON.parse(status.stdout), {
-      authenticated: true, expiresAt: new Date(expiry * 1000).toISOString(), sessionPath: fixture.sessionPath,
+      authenticated: true, expiresAt: new Date(expiry * 1000).toISOString(), sessionPath: fixture.sessionPath, renewable: false,
     });
   }, { authenticated: false });
 });
@@ -133,13 +134,13 @@ test('status JSON distinguishes missing and expired or invalid sessions with exi
   await withFixture(async fixture => {
     const missing = runFixture(fixture, ['status', '--json']);
     assert.equal(missing.status, 1);
-    assert.deepEqual(JSON.parse(missing.stdout), { authenticated: false, expiresAt: null, reason: 'missing', sessionPath: fixture.sessionPath });
+    assert.deepEqual(JSON.parse(missing.stdout), { authenticated: false, expiresAt: null, reason: 'missing', renewable: false, sessionPath: fixture.sessionPath });
     assert.equal(missing.stderr, '');
     for (const saved of [JSON.stringify({ access_token: 'expired-secret', expires_at: 1 }), '{invalid-secret']) {
       await writeFile(fixture.sessionPath, saved);
       const invalid = runFixture(fixture, ['status', '--json']);
       assert.equal(invalid.status, 1);
-      assert.deepEqual(JSON.parse(invalid.stdout), { authenticated: false, expiresAt: null, reason: 'expired-or-invalid', sessionPath: fixture.sessionPath });
+      assert.deepEqual(JSON.parse(invalid.stdout), { authenticated: false, expiresAt: null, reason: 'expired-or-invalid', renewable: false, sessionPath: fixture.sessionPath });
       assert.equal(invalid.stderr, '');
       assert.equal(invalid.stdout.includes('secret'), false);
     }
@@ -285,3 +286,227 @@ for (const [outcome, exitCode] of [['success', 0], ['compilation-failed', 2], ['
     });
   });
 }
+
+const challengeList = { challenges: [{ id: 1, title: 'Vector Addition' }, { id: 2, title: 'Matrix Multiplication' }] };
+
+// Serves the public challenge list and accelerator settings, and records what the socket was asked to do.
+function fakePlatformSetup(status, recordPath) {
+  return `
+    const { writeFileSync } = await import('node:fs');
+    globalThis.fetch = async url => Response.json(String(url).endsWith('/challenges')
+      ? ${JSON.stringify(challengeList)} : { accelerators: ['H100'], supportedLanguages: { H100: ['cute'] } });
+    globalThis.WebSocket = class extends EventTarget {
+      constructor() { super(); queueMicrotask(() => this.dispatchEvent(new Event('open'))); }
+      send(data) {
+        const request = JSON.parse(data);
+        writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ action: request.action, challengeId: request.submission.challengeId }));
+        const emit = event => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(event) }));
+        queueMicrotask(() => {
+          emit({ status: 'running', type: 'stdout', output: 'Spinning up H100...\\n' });
+          emit({ status: 'running', type: 'stdout', output: 'partial ' });
+          emit({ status: ${JSON.stringify(status)}, type: 'stdout', output: '\\u001b[32m\\u2713 done\\u001b[0m\\r\\n' });
+        });
+      }
+      close() {}
+    };
+  `;
+}
+
+for (const [status, exitCode] of [['success', 0], ['compilation-failed', 2]]) {
+  test(`CLI run ${status} sends a run action, streams plain output, writes no receipt and exits ${exitCode}`, async () => {
+    await withFixture(async fixture => {
+      const sourcePath = join(fixture.directory, 'solution.py');
+      const recordPath = join(fixture.directory, 'request.json');
+      await writeFile(sourcePath, '# synthetic run source\n');
+      const result = runFixture(fixture, ['submissions', 'run', '--challenge', '2', '--language', 'cute', '--gpu', 'H100', '--file', sourcePath], {
+        setup: fakePlatformSetup(status, recordPath),
+      });
+      assert.equal(result.status, exitCode, result.stderr);
+      assert.deepEqual(JSON.parse(await readFile(recordPath, 'utf8')), { action: 'run', challengeId: 2 });
+      assert.equal(result.stdout, `Run finished: ${status}\n`);
+      // One status line per change, platform text without ANSI or carriage returns, and no half-open line.
+      assert.match(result.stderr, /\[running\]\nSpinning up H100\.\.\.\npartial \n\[[a-z-]+\]\n✓ done\n$/u);
+      assert.equal(/\u001b|\r/u.test(result.stderr), false);
+      await assert.rejects(stat(join(fixture.data, 'receipts')), { code: 'ENOENT' });
+    });
+  });
+}
+
+test('CLI run --json keeps stdout machine readable and omits platform text from stderr', async () => {
+  await withFixture(async fixture => {
+    const sourcePath = join(fixture.directory, 'solution.py');
+    await writeFile(sourcePath, '# synthetic run source\n');
+    const result = runFixture(fixture, ['submissions', 'run', '--challenge', '2', '--language', 'cute', '--gpu', 'H100', '--file', sourcePath, '--json'], {
+      setup: fakePlatformSetup('success', join(fixture.directory, 'request.json')),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.deepEqual(Object.keys(output), ['status', 'events']);
+    assert.equal(output.events.length, 3);
+    assert.equal(result.stderr.includes('Spinning up'), false);
+  });
+});
+
+test('CLI submit infers the challenge from the nearest matching directory and names it', async () => {
+  await withFixture(async fixture => {
+    const directory = join(fixture.directory, 'solutions', 'matrix-multiplication', 'drafts');
+    await mkdir(directory, { recursive: true });
+    const sourcePath = join(directory, 'v1.py');
+    const recordPath = join(fixture.directory, 'request.json');
+    await writeFile(sourcePath, '# synthetic submission source\n');
+    const result = runFixture(fixture, ['submissions', 'submit', '--language', 'cute', '--gpu', 'H100', '--file', sourcePath, '--json'], {
+      setup: fakePlatformSetup('success', recordPath),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(await readFile(recordPath, 'utf8')), { action: 'submit', challengeId: 2 });
+    assert.match(result.stderr, /Submitting challenge 2 \(Matrix Multiplication\) \/ cute \/ H100/u);
+    assert.equal((await readdir(join(fixture.data, 'receipts'))).length, 1);
+  });
+});
+
+test('CLI refuses to guess a challenge and opens no connection when nothing matches', async () => {
+  await withFixture(async fixture => {
+    const sourcePath = join(fixture.directory, 'solution.py');
+    const recordPath = join(fixture.directory, 'request.json');
+    await writeFile(sourcePath, '# synthetic submission source\n');
+    for (const extra of [[], ['--challenge', 'no-such-challenge'], ['--challenge', '0']]) {
+      const result = runFixture(fixture, ['submissions', 'submit', '--language', 'cute', '--gpu', 'H100', '--file', sourcePath, ...extra], {
+        setup: fakePlatformSetup('success', recordPath),
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /challenge/iu);
+      await assert.rejects(stat(recordPath), { code: 'ENOENT' });
+      await assert.rejects(stat(join(fixture.data, 'receipts')), { code: 'ENOENT' });
+    }
+  });
+});
+
+test('CLI list accepts a title slug and queries the resolved numeric ID', async () => {
+  await withFixture(async fixture => {
+    const urlsPath = join(fixture.directory, 'urls.json');
+    const result = runFixture(fixture, ['submissions', 'list', '--challenge', 'Matrix Multiplication', '--language', 'cute', '--gpu', 'H100', '--json'], {
+      setup: `
+        const { writeFileSync } = await import('node:fs');
+        const urls = [];
+        globalThis.fetch = async (url, init) => {
+          urls.push({ url: String(url), authorized: Boolean(init.headers.Authorization) });
+          writeFileSync(${JSON.stringify(urlsPath)}, JSON.stringify(urls));
+          return Response.json(String(url).endsWith('/challenges') ? ${JSON.stringify(challengeList)} : { submissions: [] });
+        };
+      `,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(await readFile(urlsPath, 'utf8')), [
+      { url: 'https://api.leetgpu.com/api/v1/challenges', authorized: false },
+      { url: 'https://api.leetgpu.com/api/v1/submissions?challengeId=2&language=cute&accelerator=H100', authorized: true },
+    ]);
+  });
+});
+
+const refreshPath = fixture => join(fixture.config, 'refresh-token');
+const renewedExpiry = expiry + 7200;
+const renewedToken = `header.${Buffer.from(JSON.stringify({ sub: 'cli-test-user', exp: renewedExpiry })).toString('base64url')}.renewed`;
+
+// The sign-in server answers the refresh exchange; every other request is the LeetGPU API.
+function renewalSetup(status, logPath) {
+  return `
+    const { writeFileSync } = await import('node:fs');
+    const log = [];
+    globalThis.fetch = async (url, init) => {
+      const signIn = String(url).startsWith('https://yhdtysacdkqoquvkdwdd.supabase.co/');
+      log.push({ url: String(url), bearer: signIn ? 'sign-in' : init.headers.Authorization, body: signIn ? JSON.parse(init.body) : null });
+      writeFileSync(${JSON.stringify(logPath)}, JSON.stringify(log));
+      if (!signIn) return Response.json({ submissions: [] });
+      if (${status} !== 200) return new Response('{"msg":"private-server-detail"}', { status: ${status} });
+      return Response.json({ access_token: ${JSON.stringify(renewedToken)}, expires_at: ${renewedExpiry}, refresh_token: 'rotated-refresh-token', user: { email: 'private@example.test' } });
+    };
+  `;
+}
+
+test('persistent stdin login keeps the refresh token apart from the session file and never prints it', async () => {
+  await withFixture(async fixture => {
+    const input = JSON.stringify({ ...session, refresh_token: 'first-refresh-token', user: { email: 'private@example.test' } });
+    const result = runFixture(fixture, ['login', '--stdin', '--persist'], { input });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /staying signed in/u);
+    assert.equal(`${result.stdout}${result.stderr}`.includes('first-refresh-token'), false);
+    assert.deepEqual(JSON.parse(await readFile(fixture.sessionPath, 'utf8')), session);
+    assert.equal(await readFile(refreshPath(fixture), 'utf8'), 'first-refresh-token\n');
+    assert.equal((await stat(refreshPath(fixture))).mode & 0o777, 0o600);
+    const status = runFixture(fixture, ['status', '--json']);
+    assert.equal(status.status, 0);
+    assert.equal(JSON.parse(status.stdout).renewable, true);
+  }, { authenticated: false });
+});
+
+test('persistent login needs a full session of its own and a place to keep the secret', async () => {
+  await withFixture(async fixture => {
+    const jwtOnly = runFixture(fixture, ['login', '--stdin', '--persist'], { input: `${token}\n` });
+    assert.equal(jwtOnly.status, 1);
+    assert.match(jwtOnly.stderr, /full session JSON including refresh_token/u);
+    const shared = runFixture(fixture, ['login', '--existing-browser', '--persist']);
+    assert.equal(shared.status, 1);
+    assert.match(shared.stderr, /cannot share the session of an open browser tab/u);
+    const noStore = spawnSync(process.execPath, ['--input-type=module', '-e', scriptFor(['login', '--stdin', '--persist'])], {
+      encoding: 'utf8', env: { ...fixture.env, LEETGPU_SECRET_STORE: 'none' }, input: JSON.stringify({ ...session, refresh_token: 'first-refresh-token' }), timeout: 10000,
+    });
+    assert.equal(noStore.status, 1);
+    assert.match(noStore.stderr, /needs a secret store/u);
+    for (const path of [fixture.sessionPath, refreshPath(fixture)]) await assert.rejects(stat(path), { code: 'ENOENT' });
+  }, { authenticated: false });
+});
+
+test('an expired access token renews before the request and the API sees only the new token', async () => {
+  await withFixture(async fixture => {
+    const logPath = join(fixture.directory, 'requests.json');
+    await writeFile(fixture.sessionPath, JSON.stringify({ access_token: 'expired-access', expires_at: 1 }), { mode: 0o600 });
+    await writeFile(refreshPath(fixture), 'first-refresh-token\n', { mode: 0o600 });
+    const before = runFixture(fixture, ['status', '--json']);
+    assert.equal(before.status, 0);
+    assert.deepEqual(JSON.parse(before.stdout), { authenticated: false, expiresAt: null, sessionPath: fixture.sessionPath, renewable: true, reason: 'expired-or-invalid' });
+    const result = runFixture(fixture, ['submissions', 'list', '--challenge', '1', '--language', 'cute', '--gpu', 'H100', '--json'], { setup: renewalSetup(200, logPath) });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { submissions: [] });
+    assert.deepEqual(JSON.parse(await readFile(logPath, 'utf8')), [
+      { url: 'https://yhdtysacdkqoquvkdwdd.supabase.co/auth/v1/token?grant_type=refresh_token', bearer: 'sign-in', body: { refresh_token: 'first-refresh-token' } },
+      { url: 'https://api.leetgpu.com/api/v1/submissions?challengeId=1&language=cute&accelerator=H100', bearer: `Bearer ${renewedToken}`, body: null },
+    ]);
+    assert.deepEqual(JSON.parse(await readFile(fixture.sessionPath, 'utf8')), { access_token: renewedToken, expires_at: renewedExpiry });
+    assert.equal(await readFile(refreshPath(fixture), 'utf8'), 'rotated-refresh-token\n');
+    for (const text of [result.stdout, result.stderr]) assert.equal(/refresh-token|renewed|private@/u.test(text), false);
+    const after = JSON.parse(runFixture(fixture, ['status', '--json']).stdout);
+    assert.equal(after.authenticated, true);
+    assert.equal(after.renewable, true);
+  }, { authenticated: false });
+});
+
+test('a rejected renewal asks for a new login, forgets the dead token and sends nothing to the API', async () => {
+  await withFixture(async fixture => {
+    const logPath = join(fixture.directory, 'requests.json');
+    await writeFile(fixture.sessionPath, JSON.stringify({ access_token: 'expired-access', expires_at: 1 }), { mode: 0o600 });
+    await writeFile(refreshPath(fixture), 'first-refresh-token\n', { mode: 0o600 });
+    const result = runFixture(fixture, ['submissions', 'latest', '--json'], { setup: renewalSetup(400, logPath) });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no longer valid\. Run login again/u);
+    assert.equal(result.stderr.includes('private-server-detail'), false);
+    assert.equal(JSON.parse(await readFile(logPath, 'utf8')).length, 1);
+    await assert.rejects(stat(refreshPath(fixture)), { code: 'ENOENT' });
+    assert.equal(runFixture(fixture, ['status', '--json']).status, 1);
+  }, { authenticated: false });
+});
+
+test('a one-hour login replaces an earlier persistent sign-in, and logout removes both secrets', async () => {
+  await withFixture(async fixture => {
+    await writeFile(refreshPath(fixture), 'first-refresh-token\n', { mode: 0o600 });
+    const hourly = runFixture(fixture, ['login', '--stdin'], { input: JSON.stringify({ ...session, refresh_token: 'unrelated-refresh-token' }) });
+    assert.equal(hourly.status, 0, hourly.stderr);
+    assert.match(hourly.stderr, /Removed the previously saved persistent sign-in/u);
+    await assert.rejects(stat(refreshPath(fixture)), { code: 'ENOENT' });
+    assert.deepEqual(JSON.parse(await readFile(fixture.sessionPath, 'utf8')), session);
+    await writeFile(refreshPath(fixture), 'first-refresh-token\n', { mode: 0o600 });
+    const out = runFixture(fixture, ['logout']);
+    assert.equal(out.status, 0, out.stderr);
+    for (const path of [fixture.sessionPath, refreshPath(fixture)]) await assert.rejects(stat(path), { code: 'ENOENT' });
+    assert.equal(runFixture(fixture, ['status', '--json']).status, 1);
+  }, { authenticated: false });
+});

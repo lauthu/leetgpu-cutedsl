@@ -12,7 +12,24 @@
 ./tools/leetgpu/leetgpu status --json
 ```
 
-返回 `authenticated`、`expiresAt`、`sessionPath`；没有有效会话时另有 `reason`。退出码 0 表示本地保存的会话未过期，1 表示缺失/过期或其他错误。这只检查本地有效期；服务端仍可能撤销会话。请求返回 401 时重新登录。
+返回 `authenticated`、`expiresAt`、`sessionPath`、`renewable`；没有有效会话时另有 `reason`。退出码 0 表示本地保存的会话未过期，或已保存 refresh token、下一条命令会自动续期（`renewable: true`）；1 表示既过期又无法续期，或其他错误；127 表示启动脚本找不到 Node.js 22+。这只做本地检查；服务端仍可能撤销会话。请求返回 401 时重新登录。
+
+### 保持登录：`--persist`
+
+```sh
+./tools/leetgpu/leetgpu login --browser --persist   # 独立 Chrome 窗口，登录一次
+./tools/leetgpu/leetgpu login --persist             # 或：在无痕窗口登录后粘贴到本地页面
+```
+
+默认登录只保存 1 小时有效的 access token。加 `--persist` 后还会保存 refresh token，此后任何需要认证的命令在 access token 过期（或 60 秒内将过期）时先自动续期，再发出请求。它可与 `--browser`、本地导入页（含 `--no-browser`）和 `--stdin` 合用。
+
+- **必须是独占的会话。** 每次续期都会更换 refresh token。若与正在使用的浏览器标签页共用同一会话，后续期的一方会失败并被登出，因此 `--persist` 拒绝与 `--existing-browser` 合用。`--browser` 使用临时 profile 并在结束后删除，天然独占；粘贴方式请在无痕/隐私窗口登录，提交后直接关闭窗口，不要点击 Sign Out。`--persist` 需要含 `refresh_token` 的完整 JSON，不接受单独的 access token。
+- **保存位置。** macOS 存入登录钥匙串（服务名 `leetgpu-history`，每个配置目录一个条目），写入时密文只经标准输入传给 `/usr/bin/security`，不出现在命令参数中。其他平台默认不支持；可显式设置 `LEETGPU_SECRET_STORE=file`，改存到配置目录下 0600 的明文文件 `refresh-token`，请自行权衡。钥匙串保护的是静态数据（磁盘、备份、误读文件）；以同一用户身份运行的程序仍可通过 `security` 读取。
+- **续期。** 请求 `POST https://yhdtysacdkqoquvkdwdd.supabase.co/auth/v1/token?grant_type=refresh_token`，使用网站公开的 anon key，refresh token 只在请求正文中。先保存新的 refresh token，再保存 access token。并发的命令通过配置目录下的锁文件串行续期，不会重复消耗同一个 refresh token。
+- **失效。** 服务端拒绝（HTTP 400/401/403）时，工具删除已失效的 refresh token 并提示重新登录；网络错误、429 或 5xx 时保留它，下次再试。refresh token 的有效期由 LeetGPU 的设置决定，未经核实。
+- **关闭。** `logout` 同时删除 access token 和 refresh token；之后做一次不带 `--persist` 的登录也会删除先前保存的 refresh token。两者都不会撤销服务端会话。
+
+截至 2026-11-19 的验证范围：钥匙串读写、续期请求格式和对无效 refresh token 的拒绝（真实服务返回 HTTP 400）已实际验证；用真实账号完成一次 `--persist` 登录和一次成功续期尚未执行，首次使用后在此更新。
 
 ### 已登录的 macOS Chrome：自动读取
 
@@ -69,7 +86,7 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 
 ### 保存位置与过期
 
-默认会话为 `~/.config/leetgpu-history/session.json`（文件 `0600`，目录 `0700`），不保存密码或 refresh token。令牌过期后需要重新认证；工具不会自动续期。`logout` 删除当前机器的本地 token，不撤销服务端会话或其他机器上的副本。
+默认会话为 `~/.config/leetgpu-history/session.json`（文件 `0600`，目录 `0700`），其中不保存密码或 refresh token。access token 的有效期为 1 小时（2026-11-19 核对本机会话的 `exp - iat` 为 3600 秒）；未使用 `--persist` 时过期后需要重新认证。仓库根目录的 `make run`/`make submit` 只在会话既过期又无法续期时调用 `login`。`logout` 删除当前机器的本地 access token 和已保存的 refresh token，不撤销服务端会话或其他机器上的副本。
 
 | 设置 | 默认值 / 用途 |
 |---|---|
@@ -78,6 +95,7 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 | `LEETGPU_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/leetgpu-history`；回执目录的父目录 |
 | `LEETGPU_HISTORY_CONFIG_DIR` | 旧配置目录变量；仅在没有 `LEETGPU_CONFIG_DIR` 时使用 |
 | `LEETGPU_HISTORY_CHROME` | 可选，独立浏览器模式的 Chrome/Chromium 可执行路径 |
+| `LEETGPU_SECRET_STORE` | `--persist` 的 refresh token 存放处：`keychain`（macOS 默认）、`file`（0600 明文文件）、`none`（其他平台默认，禁用 `--persist`） |
 
 目录名沿用 `leetgpu-history`，兼容早期本地工具。配置覆盖也应指向仓库之外。凭据、回执和导出的原始响应不应提交到 Git。
 
@@ -90,9 +108,14 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 ./tools/leetgpu/leetgpu submissions list --challenge 1 --language cute --gpu H100 --json
 ./tools/leetgpu/leetgpu submissions code SUBMISSION_ID --json
 ./tools/leetgpu/leetgpu submissions code SUBMISSION_ID --file solution.py --output /tmp/saved-solution.py
+./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py
 ./tools/leetgpu/leetgpu submissions submit --challenge 1 --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py --json
 ./tools/leetgpu/leetgpu logout
 ```
+
+- `--challenge` 接受数字 ID 或标题 slug（如 `matrix-multiplication`，与网站 URL 和本仓库目录名一致）。`run`/`submit` 省略它时，从 `--file` 向上最多三级目录名中取第一个与某个标题 slug 相同的目录；找不到或有歧义时报错，不会猜测。解析 slug 需要一次公开的 `challenges` 请求，解析结果打印在 stderr。
+- `run` 对应网站的 Run 按钮：与 `submit` 使用同一连接和同一 private 载荷，只是 `action` 为 `run`，不写回执，退出码规则相同。它仍占用平台 GPU。
+- 不加 `--json` 时，`run`/`submit` 把平台输出（编译错误、测试结果）去除 ANSI 和控制字符后实时打印到 stderr，状态变化时打印一行 `[status]`；加 `--json` 时 stdout 只有 JSON，平台输出在 `events` 中。
 
 - `latest` 返回账户最近提交，不能按 GPU 筛选；查看 H100 使用显式带 challenge、language、gpu 的 `list`。`cute` 表示 CuTe DSL；用 `gpus` 查看当前 GPU/语言兼容性。
 - 读取命令的 `--json` 保留 API 原始结构和元数据，可能含账户字段；提交到仓库前应筛选必要字段。表格显示的 `metrics.executionTime` 单位为毫秒，percentile 是查询时排名。
@@ -104,9 +127,10 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 
 | 退出码 | 含义 |
 |---|---|
-| `0` | 命令成功；submit 为平台确认 success |
+| `0` | 命令成功；run/submit 为平台确认 success |
 | `1` | 参数、认证、网络或其他错误；submit 可能已经被服务端接收，需看错误和回执 |
-| `2` | submit 已收到平台确认的非 success 终态，例如编译/测试失败 |
+| `2` | run/submit 已收到平台确认的非 success 终态，例如编译/测试失败 |
+| `127` | 启动脚本找不到 Node.js 22+；安装 Node 或设置 `LEETGPU_NODE` |
 
 ## API 与实现边界
 
@@ -119,15 +143,17 @@ HTTP 固定访问 `https://api.leetgpu.com`，GET 不跟随重定向，20 秒超
 | `submissions latest` | `GET /api/v1/submissions/latest` |
 | `submissions list` | `GET /api/v1/submissions?challengeId=…&language=…&accelerator=…` |
 | `submissions code` | `GET /api/v1/submissions/<id>/code` |
-| `submissions submit` | `wss://api.leetgpu.com/api/v1/ws/submit`；等待上限 180 秒 |
+| `submissions submit` | `wss://api.leetgpu.com/api/v1/ws/submit`，`action: "submit"`；等待上限 180 秒 |
+| `submissions run` | 同一 WebSocket，`action: "run"`；等待上限 180 秒 |
+
+`run` 的消息格式取自[社区 VS Code 扩展的传输实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/submissionTransport.ts#L20-L38)，平台输出字段（`type: "stdout"`、`output`）取自 2026-10-19 一次真实 submit 的回执。截至 2026-11-19，`run` 只通过了模拟测试，尚未对真实服务执行过；首次使用后在此更新结论，包括 run 是否会出现在提交历史中。
 
 这些是网站使用的接口，可能改变，不是官方 CLI 扩展。实现参考已核对的网站请求行为；接口调研资料（2026-10-19）：[LeetGPU web client](https://leetgpu.com/)、[社区 API 实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/apiClient.ts#L53-L64)、[官方认证 feature request](https://github.com/AlphaGPU/leetgpu-challenges/issues/304)。
 
 ## 测试
 
 ```sh
-node --test tools/leetgpu/*.test.mjs
-sh -n tools/leetgpu/leetgpu
+make test   # sh -n tools/leetgpu/leetgpu && node --test tools/leetgpu/*.test.mjs
 ```
 
-测试使用假 token、模拟 HTTP/WebSocket、临时配置目录和本地回环接收服务，不访问账号或消耗 GPU。CI 在 macOS/Linux 与 Node.js 22/24 上运行，也检查解法 Python 语法；不将语法检查当作 CuTe 编译或 GPU 测试。
+测试使用假 token、模拟 HTTP/WebSocket、临时配置目录和本地回环接收服务，不访问账号或消耗 GPU。CI 在 macOS/Linux 与 Node.js 22/24 上运行工具测试，另有一个任务用固定版本的 ruff 检查解法（含 Python 语法）并校验已记录源码的 SHA-256；不将这些静态检查当作 CuTe 编译或 GPU 测试。

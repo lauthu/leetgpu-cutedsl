@@ -1,0 +1,2 @@
+# Pinned so formatting is reproducible and never drifts under recorded sources.
+ruff==0.17.5

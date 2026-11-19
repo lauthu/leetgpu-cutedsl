@@ -1,26 +1,33 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { parseSession } from './auth.mjs';
+import { parseSession, refreshTokenOf } from './auth.mjs';
 
 const maxBodyBytes = 100000;
 const invalidMessage = '内容无效或已过期。请重新登录 LeetGPU，复制完整 Value 后重试。';
+const invalidPersistMessage = '内容无效、已过期，或不含 refresh_token。请在无痕窗口重新登录 LeetGPU，复制完整 Value（JSON）后重试。';
 
-export function parsePastedSession(value) {
+/**
+ * With `persist`, the result also carries the refresh token, and a bare access
+ * token is refused because it cannot be renewed.
+ */
+export function parsePastedSession(value, { persist = false } = {}) {
   if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > maxBodyBytes) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (typeof parsed === 'string') return parseSession({ access_token: parsed });
-    return parseSession(parsed);
-  } catch {
-    if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(trimmed)) return null;
+  let parsed;
+  try { parsed = JSON.parse(trimmed); } catch {
+    if (persist || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(trimmed)) return null;
     return parseSession({ access_token: trimmed });
   }
+  if (typeof parsed === 'string') return persist ? null : parseSession({ access_token: parsed });
+  const session = parseSession(parsed);
+  if (!session || !persist) return session;
+  const refreshToken = refreshTokenOf(parsed);
+  return refreshToken ? { ...session, refresh_token: refreshToken } : null;
 }
 
-function page(nonce) {
+function page(nonce, persist = false) {
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>连接 LeetGPU 历史记录</title>
@@ -33,19 +40,19 @@ button{font:inherit;background:#116637;color:white;border:0;border-radius:6px;pa
 button:disabled{opacity:.55;cursor:default}.note{color:#526170}#status{min-height:28px;overflow-wrap:anywhere}
 </style></head><body><main>
 <h1>连接 LeetGPU 历史记录</h1>
-<p>使用平时的浏览器登录。登录信息只发送到此临时接收页面；远程使用时请通过 SSH 端口转发连接。</p>
+${persist ? `<p><strong>保持登录模式：</strong>请在<strong>无痕 / 隐私窗口</strong>中登录，不要使用平时已登录的标签页。工具会独占这次会话并自动续期；若与平时的标签页共用同一会话，其中一方会被登出。</p>` : '<p>使用平时的浏览器登录。'}${persist ? '<p>' : ''}登录信息只发送到此临时接收页面；远程使用时请通过 SSH 端口转发连接。</p>
 <ol>
-<li>在新标签页打开 <a href="https://leetgpu.com" target="_blank" rel="noopener noreferrer">LeetGPU</a>，使用你的账号登录。</li>
+<li>在${persist ? '无痕 / 隐私窗口' : '新标签页'}打开 <a href="https://leetgpu.com"${persist ? '' : ' target="_blank"'} rel="noopener noreferrer">LeetGPU</a>${persist ? '（复制此链接到无痕窗口）' : ''}，使用你的账号登录。</li>
 <li>在 LeetGPU 标签页打开 Chrome 开发者工具：Mac 按 <code>⌥⌘I</code>，Windows / Linux 按 <code>F12</code> 或 <code>Ctrl+Shift+I</code>。</li>
 <li>选择 <strong>Application（应用）</strong> → <strong>Local Storage（本地存储空间）</strong> → <code>https://leetgpu.com</code>。</li>
 <li>找到键 <code>sb-yhdtysacdkqoquvkdwdd-auth-token</code>，复制该行的完整 <strong>Value（值）</strong>。可右键该行选择复制值，或双击 Value 后全选复制。</li>
-<li>回到此页面，将完整 JSON 粘贴到下方并提交。也可粘贴单独的 <code>access_token</code>（JWT）。</li>
+<li>回到此页面，将完整 JSON 粘贴到下方并提交。${persist ? '提交成功后直接关闭无痕窗口，<strong>不要点击 Sign Out</strong>，否则这次会话会立即失效。' : '也可粘贴单独的 <code>access_token</code>（JWT）。'}</li>
 </ol>
 <form id="login" autocomplete="off"><label for="session">LeetGPU 会话 Value 或 access_token</label>
 <textarea id="session" autocomplete="off" spellcheck="false" autocapitalize="off" aria-label="LeetGPU 会话 Value 或 access_token"></textarea>
 <button id="submit" type="submit">连接历史记录</button></form>
 <p id="status" role="status" aria-live="polite"></p>
-<p class="note">工具只保留 access token 和过期时间；不会保留 refresh token、读取剪贴板或读取浏览器配置。提交成功后，此接收页面会停止服务。</p>
+<p class="note">${persist ? '保持登录模式会保存 refresh token（macOS 钥匙串，或你显式选择的本地文件）用于自动续期；不会读取剪贴板或浏览器配置。' : '工具只保留 access token 和过期时间；不会保留 refresh token、读取剪贴板或读取浏览器配置。'}提交成功后，此接收页面会停止服务。</p>
 </main><script nonce="${nonce}">
 const form=document.getElementById('login');
 const input=document.getElementById('session');
@@ -64,7 +71,7 @@ addEventListener('pagehide',()=>{input.value='';});
 </script></body></html>`;
 }
 
-async function createLoginReceiver({ timeoutMs = 600000, port = 0 } = {}) {
+async function createLoginReceiver({ timeoutMs = 600000, port = 0, persist = false } = {}) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Login timeout must be a positive number.');
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Login port must be an integer between 0 and 65535.');
   const path = `/${randomBytes(32).toString('hex')}`;
@@ -92,7 +99,7 @@ async function createLoginReceiver({ timeoutMs = 600000, port = 0 } = {}) {
     if (request.headers.host !== expectedHost || request.url !== path || settled) {
       request.resume(); reply(404, { error: '页面不存在。' }); return;
     }
-    if (request.method === 'GET') { reply(200, page(nonce), 'text/html; charset=utf-8'); return; }
+    if (request.method === 'GET') { reply(200, page(nonce, persist), 'text/html; charset=utf-8'); return; }
     if (request.method !== 'POST') { request.resume(); reply(405, { error: '请求方式不支持。' }); return; }
     if (request.headers.origin !== expectedOrigin) { request.resume(); reply(403, { error: '请求来源无效。' }); return; }
     if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(request.headers['content-type'] || '')) {
@@ -111,9 +118,9 @@ async function createLoginReceiver({ timeoutMs = 600000, port = 0 } = {}) {
     request.on('end', () => {
       if (rejected || settled) return;
       let session;
-      try { session = parsePastedSession(JSON.parse(Buffer.concat(chunks).toString('utf8')).value); } catch { /* Never echo pasted input or parser errors. */ }
+      try { session = parsePastedSession(JSON.parse(Buffer.concat(chunks).toString('utf8')).value, { persist }); } catch { /* Never echo pasted input or parser errors. */ }
       chunks.length = 0;
-      if (!session) { reply(400, { error: invalidMessage }); return; }
+      if (!session) { reply(400, { error: persist ? invalidPersistMessage : invalidMessage }); return; }
       response.once('finish', () => finish(undefined, session));
       reply(200, { ok: true });
     });
@@ -168,15 +175,17 @@ export async function manualLogin({
   onStatus = () => {},
   openBrowser = true,
   port = 0,
+  persist = false,
   openBrowserFn = openDefaultBrowser,
   createReceiver = createLoginReceiver,
 } = {}) {
-  const receiver = await createReceiver({ timeoutMs, port });
+  const receiver = await createReceiver({ timeoutMs, port, ...(persist && { persist: true }) });
   try {
     const receiverPort = new URL(receiver.url).port;
     onStatus(`Open this temporary login page in your local browser: ${receiver.url}`);
     onStatus(`If this CLI runs on a remote machine, first run on your local machine: ssh -N -L 127.0.0.1:${receiverPort}:127.0.0.1:${receiverPort} <user@remote-host>`);
     onStatus(`Use the same local port (${receiverPort}) and the exact URL above; then sign in to LeetGPU and follow the page instructions.`);
+    if (persist) onStatus('Staying signed in: sign in to LeetGPU in a private/incognito window, not in a tab you keep using.');
     if (openBrowser) {
       try {
         await openBrowserFn(receiver.url);

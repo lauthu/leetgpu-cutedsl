@@ -51,19 +51,27 @@ function sanitize(value, token) {
   return value;
 }
 
-/** One attempt only: an interrupted connection may already have created a submission. */
+/**
+ * One attempt only: an interrupted connection may already have created a submission.
+ * `action: 'run'` uses the same envelope for the website's Run button, which
+ * executes the code without ranking it as a submission.
+ */
 export async function submitSolution({
   token, payload, submissionId = randomUUID(), onEvent = () => {},
-  WebSocketClass = globalThis.WebSocket, timeoutMs = 180000, signal,
+  WebSocketClass = globalThis.WebSocket, timeoutMs = 180000, signal, action = 'submit',
 } = {}) {
+  if (action !== 'submit' && action !== 'run') throw new Error('Invalid submission action.');
   if (!validId(submissionId)) throw new Error('Invalid submission ID.');
   const submission = buildSubmission({ token, challenge: payload?.challengeId, language: payload?.language, gpu: payload?.accelerator, files: payload?.files });
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error('Submission timeout must be a positive integer.');
   if (typeof onEvent !== 'function') throw new Error('Submission event handler must be a function.');
   let currentId = submissionId;
   let sent = false;
+  const noun = action === 'run' ? 'run' : 'submission';
+  // Only a submit can leave a ranked record behind, so only it needs the history warning.
+  const hint = action === 'run' ? '' : ' Check its history before submitting again.';
   const failure = message => Object.assign(new Error(message), { submissionId: currentId, sent });
-  if (signal?.aborted) throw failure('The submission was canceled before connecting.');
+  if (signal?.aborted) throw failure(`The ${noun} was canceled before connecting.`);
   if (typeof WebSocketClass !== 'function') throw failure('This Node.js runtime does not support WebSocket; use Node.js 22 or newer.');
 
   return new Promise((resolve, reject) => {
@@ -72,7 +80,7 @@ export async function submitSolution({
     let timer;
     const events = [];
     const listeners = [];
-    const abort = () => finish(failure('The submission was interrupted. Check its history before submitting again.'));
+    const abort = () => finish(failure(`The ${noun} was interrupted.${hint}`));
     function finish(error, result) {
       if (settled) return;
       settled = true;
@@ -94,12 +102,12 @@ export async function submitSolution({
       listen('open', () => {
         if (settled || sent) return;
         try {
-          const message = JSON.stringify({ token, submissionId, action: 'submit', submission, idempotencyKey: submissionId });
+          const message = JSON.stringify({ token, submissionId, action, submission, idempotencyKey: submissionId });
           // Mark attempted sends conservatively: never automatically repeat after an error.
           sent = true;
           socket.send(message);
         } catch {
-          finish(failure('Could not send the submission. Check its history before submitting again.'));
+          finish(failure(`Could not send the ${noun}.${hint}`));
         }
       });
       listen('message', event => {
@@ -114,12 +122,12 @@ export async function submitSolution({
             finish(null, { submissionId: currentId, status: received.status, events });
           }
         } catch {
-          finish(failure('Could not process a submission event. Check its history before submitting again.'));
+          finish(failure(`Could not process a ${noun} event.${hint}`));
         }
       });
-      listen('error', () => finish(failure('The submission connection failed. Check its history before submitting again.')));
-      listen('close', () => finish(failure('The submission connection closed before a final result. Check its history before submitting again.')));
-      timer = setTimeout(() => finish(failure('Timed out waiting for the submission result. Check its history before submitting again.')), timeoutMs);
+      listen('error', () => finish(failure(`The ${noun} connection failed.${hint}`)));
+      listen('close', () => finish(failure(`The ${noun} connection closed before a final result.${hint}`)));
+      timer = setTimeout(() => finish(failure(`Timed out waiting for the ${noun} result.${hint}`)), timeoutMs);
     } catch {
       finish(failure('Could not open the LeetGPU submission connection.'));
     }

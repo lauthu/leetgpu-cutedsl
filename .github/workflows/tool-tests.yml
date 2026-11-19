@@ -1,14 +1,29 @@
 name: Tool tests
 
+# Pull requests are the only route into main, so run once per PR update and
+# once on main after a merge instead of twice for every branch push.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  lint:
+    name: Lint and records
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint and format check with the pinned ruff (also catches Python syntax errors)
+        run: make lint
+      - name: Recorded solution files still match submissions.json
+        run: make records
+
   test:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
@@ -23,18 +38,6 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Run tool tests without credentials or a GPU
-        run: node --test tools/leetgpu/*.test.mjs
-      - name: Check launcher syntax and help
-        run: |
-          sh -n tools/leetgpu/leetgpu
-          tools/leetgpu/leetgpu --help
-      - name: Parse solution Python syntax without importing CUDA
-        run: |
-          python3 - <<'PY'
-          import ast
-          from pathlib import Path
-
-          for source in sorted(Path("solutions").rglob("*.py")):
-              ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-              print(f"Parsed {source}")
-          PY
+        run: make test
+      - name: Launcher prints help
+        run: tools/leetgpu/leetgpu --help

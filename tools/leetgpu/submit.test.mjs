@@ -176,3 +176,14 @@ test('malformed events and callback or transport errors expose no raw token deta
     assert.equal(fake.sockets.length, 1);
   }
 });
+
+test('a run reuses the envelope with action run and needs no history check after a failure', async () => {
+  const fake = transport();
+  const pending = submitSolution({ token, payload, submissionId: 'request-id', action: 'run', ...fake });
+  fake.sockets[0].open();
+  assert.deepEqual(fake.sockets[0].sent, [{ token, submissionId: 'request-id', action: 'run', submission: payload, idempotencyKey: 'request-id' }]);
+  fake.sockets[0].close();
+  await assert.rejects(pending, error => /run connection closed before a final result\.$/u.test(error.message) && !/history/u.test(error.message));
+  await assert.rejects(submitSolution({ token, payload, action: 'kill', ...fake }), /Invalid submission action/u);
+  assert.equal(fake.sockets.length, 1);
+});

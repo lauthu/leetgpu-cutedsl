@@ -68,3 +68,13 @@ test('unsupported stream data gets a generic error', async () => {
     return true;
   });
 });
+
+test('persistent input returns the refresh token and refuses a bare access token without echoing it', async () => {
+  const full = JSON.stringify({ ...normalized, refresh_token: 'private-refresh', user: { email: 'private@example.test' } });
+  assert.deepEqual(await readSessionInput(Readable.from([full]), { persist: true }), { ...normalized, refresh_token: 'private-refresh' });
+  await assert.rejects(readSessionInput(Readable.from([token]), { persist: true }), error => {
+    assert.match(error.message, /session input is invalid or expired.*full session JSON including refresh_token/u);
+    assert.equal(error.message.includes(token), false);
+    return true;
+  });
+});

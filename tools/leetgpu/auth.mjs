@@ -5,6 +5,7 @@ import { homedir, platform, tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { configDirectory } from './paths.mjs';
+import { openSecretStore, validSecret } from './secrets.mjs';
 
 const origin = 'https://leetgpu.com';
 export const sessionPath = join(configDirectory, 'session.json');
@@ -25,6 +26,19 @@ export function parseSession(value, nowSeconds = Date.now() / 1000) {
   }
   if (!Number.isFinite(expiry) || expiry <= nowSeconds) return null;
   return { access_token: token, expires_at: Math.floor(expiry) };
+}
+
+/**
+ * The refresh token of a captured or pasted session, or null. It is kept apart
+ * from parseSession so that only an explicit persistent sign-in ever sees it.
+ */
+export function refreshTokenOf(value) {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const token = (value.currentSession || value.session || value).refresh_token;
+  return validSecret(token) ? token : null;
 }
 
 async function checkDirectory() {
@@ -73,6 +87,8 @@ export async function loadSession() {
 }
 
 export async function logout() {
+  // Remove the long-lived secret first: without it the session cannot be renewed.
+  await openSecretStore().delete();
   try { await checkDirectory(); } catch (error) {
     if (error.code === 'ENOENT') return;
     throw error;
@@ -161,7 +177,8 @@ function callCdp(url, method, params = {}, { signal, WebSocketClass = WebSocket,
 
 // This function is evaluated in a page of the owned temporary profile. The origin
 // is checked again here because a page may navigate after /json/list was fetched.
-function captureSessionInPage() {
+// The refresh token leaves the page only for an explicit persistent sign-in.
+function captureSessionInPage(keepRefreshToken) {
   if (location.origin !== 'https://leetgpu.com') return null;
   // This is LeetGPU's public Supabase project ID, verified in the website.
   for (const key of ['sb-yhdtysacdkqoquvkdwdd-auth-token']) {
@@ -175,7 +192,9 @@ function captureSessionInPage() {
         expires_at = JSON.parse(atob(encoded)).exp;
       }
       if (Number.isFinite(expires_at) && expires_at > Date.now() / 1000) {
-        return { access_token: session.access_token, expires_at };
+        const captured = { access_token: session.access_token, expires_at };
+        if (keepRefreshToken === true && typeof session.refresh_token === 'string') captured.refresh_token = session.refresh_token;
+        return captured;
       }
     } catch { /* Ignore incomplete or expired auth entries. */ }
   }
@@ -192,7 +211,7 @@ function pageSocket(target, port) {
   } catch { return null; }
 }
 
-async function waitForSession(endpoint, signal) {
+async function waitForSession(endpoint, signal, persist = false) {
   while (true) {
     signal.throwIfAborted();
     try {
@@ -206,10 +225,12 @@ async function waitForSession(endpoint, signal) {
         const socket = pageSocket(target, endpoint.port);
         if (!socket) continue;
         const response = await callCdp(socket, 'Runtime.evaluate', {
-          expression: `(${captureSessionInPage.toString()})()`, returnByValue: true,
+          expression: `(${captureSessionInPage.toString()})(${persist})`, returnByValue: true,
         }, { signal });
         const session = parseSession(response?.result?.value);
-        if (session) return session;
+        if (session && !persist) return session;
+        const refreshToken = refreshTokenOf(response?.result?.value);
+        if (session && refreshToken) return { ...session, refresh_token: refreshToken };
       }
     } catch {
       signal.throwIfAborted();
@@ -240,7 +261,7 @@ async function stopOwnedBrowser(browser, endpoint) {
   if (isRunning(browser)) throw new Error('The dedicated Chrome process could not be stopped.');
 }
 
-export async function browserLogin({ timeoutMs = 600000, onStatus = () => {} } = {}) {
+export async function browserLogin({ timeoutMs = 600000, onStatus = () => {}, persist = false } = {}) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Login timeout must be a positive number.');
   const executable = await chromeExecutable();
   const profile = await mkdtemp(join(tmpdir(), 'leetgpu-history-login-'));
@@ -264,7 +285,9 @@ export async function browserLogin({ timeoutMs = 600000, onStatus = () => {} } =
       if (!stopping) controller.abort(new Error('The dedicated Chrome window closed before login completed.'));
     });
     endpoint = await waitForEndpoint(profile, controller.signal);
-    return await waitForSession(endpoint, controller.signal);
+    // The profile is deleted below, so for a persistent sign-in this CLI becomes
+    // the only holder of the session and nothing else can spend its refresh token.
+    return await waitForSession(endpoint, controller.signal, persist === true);
   } finally {
     stopping = true;
     clearTimeout(timer);

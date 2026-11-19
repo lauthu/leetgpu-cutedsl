@@ -184,3 +184,51 @@ test('cancel closes the receiver without a token result', async () => {
   await assert.rejects(receiver.result, /canceled/u);
   await assert.rejects(send(receiver.url, { method: 'GET' }), /ECONNREFUSED/u);
 });
+
+test('persistent paste keeps the refresh token, refuses a bare access token and tells the user to use a private window', async () => {
+  const kept = { access_token: token, expires_at: expiry, refresh_token: 'do-not-return-refresh-token' };
+  assert.deepEqual(parsePastedSession(JSON.stringify(session), { persist: true }), kept);
+  assert.equal(parsePastedSession(token, { persist: true }), null);
+  assert.equal(parsePastedSession(JSON.stringify(token), { persist: true }), null);
+  assert.equal(parsePastedSession(JSON.stringify({ access_token: token, expires_at: expiry }), { persist: true }), null);
+  const receiver = await __test.createLoginReceiver({ timeoutMs: 5000, persist: true });
+  try {
+    const page = await send(receiver.url, { method: 'GET' });
+    assert.match(page.text, /无痕 \/ 隐私窗口/u);
+    assert.match(page.text, /不要点击 Sign Out/u);
+    assert.equal(page.text.includes('不会保留 refresh token'), false);
+    const bare = await send(receiver.url, { body: JSON.stringify({ value: token }) });
+    assert.equal(bare.status, 400);
+    assert.match(bare.text, /refresh_token/u);
+    assert.equal(bare.text.includes(token), false);
+    assert.equal((await send(receiver.url)).status, 200);
+    assert.deepEqual(await receiver.result, kept);
+  } finally { receiver.cancel(); }
+  const plain = await __test.createLoginReceiver({ timeoutMs: 5000 });
+  try {
+    const page = await send(plain.url, { method: 'GET' });
+    assert.equal(page.text.includes('无痕'), false);
+    assert.match(page.text, /不会保留 refresh token/u);
+  } finally {
+    plain.cancel();
+    await assert.rejects(plain.result, /canceled/u);
+  }
+});
+
+test('manual login passes persistence to the receiver and reminds the user about the private window', async () => {
+  const messages = [];
+  let receivedOptions;
+  const kept = { access_token: token, expires_at: expiry, refresh_token: 'do-not-return-refresh-token' };
+  const result = await manualLogin({
+    timeoutMs: 1234, port: 8787, openBrowser: false, persist: true,
+    onStatus: message => messages.push(message),
+    createReceiver: async options => {
+      receivedOptions = options;
+      return { url: 'http://127.0.0.1:8787/test-nonce', result: Promise.resolve(kept), cancel: () => {} };
+    },
+  });
+  assert.deepEqual(result, kept);
+  assert.deepEqual(receivedOptions, { timeoutMs: 1234, port: 8787, persist: true });
+  assert.equal(messages.some(message => /private\/incognito window/u.test(message)), true);
+  assert.equal(messages.some(message => message.includes('do-not-return-refresh-token')), false);
+});

@@ -1,0 +1,29 @@
+# Tool configuration only: this repository is not an installable package.
+
+[tool.ruff]
+# CuTe DSL publishes wheels for CPython 3.10 and newer.
+target-version = "py310"
+line-length = 88
+# Code blocks in the notes are illustrative, and .cache holds the CUTLASS checkout.
+extend-exclude = ["*.md", ".cache"]
+
+[tool.ruff.lint]
+# Errors, import order, likely bugs and outdated syntax. Rules that rewrite
+# control flow (SIM) stay off: a CuTe kernel is traced into IR, so turning an
+# `if` block into an expression can change what gets compiled. Naming rules
+# stay off because the platform's signatures use A, B, C, M, N, K.
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+# cutlass is not importable on machines without CUDA; classify it explicitly.
+known-third-party = ["cutlass"]
+
+[tool.ruff.lint.per-file-ignores]
+# Recorded submissions are frozen byte for byte (tools/check_records.py), so a
+# finding in one is ignored here instead of being fixed in the file.
+"solutions/vector-addition/v1_scalar.py" = ["F401"]
+
+# Editor analysis (Pylance) is configured in .vscode/settings.json, not in a
+# [tool.pyright] table here: Pylance did not pick up later edits to this file
+# until its language server was restarted, and the mere presence of the table
+# switches it from its default of no type checking to full type checking.

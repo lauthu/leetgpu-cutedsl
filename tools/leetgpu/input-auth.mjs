@@ -2,8 +2,11 @@ import { parsePastedSession } from './manual-auth.mjs';
 
 const maxInputBytes = 100000;
 
-/** Read a session from a pipe/file without echoing it or retaining refresh tokens. */
-export async function readSessionInput(stream = process.stdin) {
+/**
+ * Read a session from a pipe/file without echoing it. The refresh token is
+ * returned only for a persistent sign-in, which then requires the full JSON.
+ */
+export async function readSessionInput(stream = process.stdin, { persist = false } = {}) {
   if (stream?.isTTY) {
     throw new Error('Session input must come from a pipe or file, not an interactive terminal. Use login for interactive authentication.');
   }
@@ -32,7 +35,9 @@ export async function readSessionInput(stream = process.stdin) {
   }
   const input = Buffer.concat(chunks).toString('utf8');
   chunks.length = 0;
-  const session = parsePastedSession(input);
-  if (!session) throw new Error('The LeetGPU session input is invalid or expired. Sign in again and retry.');
+  const session = parsePastedSession(input, { persist });
+  if (!session) {
+    throw new Error(`The LeetGPU session input is invalid or expired. Sign in again and retry.${persist ? ' --persist needs the full session JSON including refresh_token.' : ''}`);
+  }
   return session;
 }

@@ -8,7 +8,9 @@ import vm from 'node:vm';
 const directory = await mkdtemp(join(tmpdir(), 'leetgpu-history-auth-test-'));
 process.env.LEETGPU_HISTORY_CONFIG_DIR = join(directory, 'config');
 process.env.LEETGPU_CONFIG_DIR = join(directory, 'config');
-const { parseSession, saveSession, loadSession, logout, sessionPath, __test } = await import('./auth.mjs');
+// Keep logout() in these tests away from the real macOS Keychain.
+process.env.LEETGPU_SECRET_STORE = 'file';
+const { parseSession, refreshTokenOf, saveSession, loadSession, logout, sessionPath, __test } = await import('./auth.mjs');
 test.after(async () => { await rm(directory, { recursive: true, force: true }); });
 
 test('session parser returns only token and future expiry', () => {
@@ -93,4 +95,33 @@ test('cleanup signals only its owned browser process', async () => {
   assert.deepEqual(signals, ['SIGTERM']);
   await __test.stopOwnedBrowser(browser);
   assert.deepEqual(signals, ['SIGTERM']);
+});
+
+test('the refresh token is extracted only on request and only when it is well formed', () => {
+  const session = { access_token: 'access', expires_at: Math.floor(Date.now() / 1000) + 1000, refresh_token: 'kept-refresh-token' };
+  assert.equal(refreshTokenOf(session), 'kept-refresh-token');
+  assert.equal(refreshTokenOf(JSON.stringify({ currentSession: session })), 'kept-refresh-token');
+  assert.equal(refreshTokenOf({ session }), 'kept-refresh-token');
+  for (const value of [null, 'not-json', [], { access_token: 'access' }, { refresh_token: 'has space inside' }, { refresh_token: 12345678 }, { refresh_token: 'short' }]) {
+    assert.equal(refreshTokenOf(value), null);
+  }
+  const context = {
+    location: { origin: 'https://leetgpu.com' },
+    localStorage: { getItem: key => key === 'sb-yhdtysacdkqoquvkdwdd-auth-token' ? JSON.stringify(session) : null },
+  };
+  const capture = argument => JSON.parse(JSON.stringify(vm.runInNewContext(`(${__test.captureSessionInPage.toString()})(${argument})`, context)));
+  assert.deepEqual(capture('true'), session);
+  for (const argument of ['', 'false', '1', '"true"']) assert.deepEqual(capture(argument), { access_token: 'access', expires_at: session.expires_at });
+  const blocked = { location: { origin: 'https://leetgpu.com.evil.test' }, get localStorage() { throw new Error('Storage accessed on wrong origin'); } };
+  assert.equal(vm.runInNewContext(`(${__test.captureSessionInPage.toString()})(true)`, blocked), null);
+});
+
+test('logout also removes a saved refresh token', async () => {
+  const { openSecretStore } = await import('./secrets.mjs');
+  const store = openSecretStore();
+  await saveSession({ access_token: 'test-token', expires_at: Math.floor(Date.now() / 1000) + 3600 });
+  await store.set('kept-refresh-token');
+  await logout();
+  assert.equal(await store.get(), null);
+  assert.equal(await loadSession(), null);
 });
