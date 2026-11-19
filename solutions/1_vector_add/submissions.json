@@ -9,7 +9,8 @@
       "challengeId": 1,
       "metrics": {
         "executionTime": 0.27299,
-        "percentile": 75.93
+        "percentile": 75.93,
+        "rankedCount": 108
       },
       "sourceVersion": "v1_scalar.py",
       "hash": {
@@ -31,7 +32,8 @@
       "challengeId": 1,
       "metrics": {
         "executionTime": 0.25513,
-        "percentile": 89.81
+        "percentile": 89.81,
+        "rankedCount": 108
       },
       "sourceVersion": "v2_vectorized.py",
       "hash": {
@@ -53,7 +55,8 @@
       "challengeId": 1,
       "metrics": {
         "executionTime": 0.23426,
-        "percentile": 97.22
+        "percentile": 97.22,
+        "rankedCount": 108
       },
       "sourceVersion": "v2_vectorized.py",
       "hash": {
@@ -75,7 +78,8 @@
       "challengeId": 1,
       "metrics": {
         "executionTime": 0.11134,
-        "percentile": 99.58
+        "percentile": 99.58,
+        "rankedCount": 237
       },
       "sourceVersion": "v2_vectorized.py",
       "hash": {

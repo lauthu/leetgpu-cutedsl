@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, chmod, lstat, mkdir, mkdtemp, open, readFile, rename, rm } from 'node:fs/promises';
+import { access, chmod, lstat, mkdir, mkdtemp, open, readdir, readFile, rename, rm } from 'node:fs/promises';
 import { homedir, platform, tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -252,6 +252,72 @@ async function waitForSession(endpoint, signal, persist = false) {
   }
 }
 
+/**
+ * A proxy for the dedicated sign-in window, in the form Chrome's --proxy-server
+ * takes. Credentials are refused: Chrome ignores them there, and they would be
+ * visible in the process list.
+ */
+export function normalizeProxy(value) {
+  let url = null;
+  if (typeof value === 'string' && value.length <= 2048) {
+    try { url = new URL(value); } catch { /* Reported below without echoing the value. */ }
+  }
+  if (!url || !['http:', 'https:', 'socks4:', 'socks5:'].includes(url.protocol) || !url.hostname
+    || url.username || url.password || !['', '/'].includes(url.pathname) || url.search || url.hash) {
+    throw new Error('--proxy must look like http://host:port (http, https, socks4 or socks5, without credentials or a path).');
+  }
+  return `${url.protocol}//${url.host}`;
+}
+
+// LeetGPU's public Supabase project ID names the local-storage key of its session.
+const SESSION_KEY = 'sb-yhdtysacdkqoquvkdwdd-auth-token';
+// A static page of the same origin: its local storage is the site's, and none of the site's scripts run.
+const CAPTURE_URL = `${origin}/robots.txt`;
+
+// Step 1, the sign-in window: a plain Chrome with no debugging or automation
+// switches, because Google refuses to sign in to a browser that has them.
+// The proxy applies to these windows only; the CLI's own requests stay direct.
+function signInArguments(profile, proxy) {
+  return [
+    `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-sync',
+    ...(proxy ? [`--proxy-server=${proxy}`] : []),
+    '--new-window', origin,
+  ];
+}
+
+// Step 2, after sign-in: the same profile reopened without a window, now with
+// debugging on loopback, only to read the session it holds.
+function captureArguments(profile, proxy) {
+  return [
+    `--user-data-dir=${profile}`, '--headless=new', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
+    '--no-first-run', '--no-default-browser-check', '--disable-sync',
+    ...(proxy ? [`--proxy-server=${proxy}`] : []),
+    CAPTURE_URL,
+  ];
+}
+
+/**
+ * Whether Chrome has written the LeetGPU session into the profile's local
+ * storage. This looks for the key's bytes in Chrome's storage files; it only
+ * signals "signed in", and step 2 does the actual, exact read.
+ */
+async function sessionWritten(profile) {
+  const directory = join(profile, 'Default', 'Local Storage', 'leveldb');
+  let names;
+  try { names = await readdir(directory); } catch { return false; }
+  const key = Buffer.from(SESSION_KEY, 'latin1');
+  for (const name of names) {
+    if (!/\.(?:log|ldb)$/u.test(name)) continue;
+    let data;
+    try { data = await readFile(join(directory, name)); } catch { continue; }
+    for (let at = data.indexOf(key); at !== -1; at = data.indexOf(key, at + 1)) {
+      // `<key>-code-verifier` is written when sign-in starts; only the bare key means it finished.
+      if (data[at + key.length] !== 0x2d) return true;
+    }
+  }
+  return false;
+}
+
 function isRunning(browser) {
   return browser && browser.pid && browser.exitCode === null && browser.signalCode === null;
 }
@@ -273,8 +339,64 @@ async function stopOwnedBrowser(browser, endpoint) {
   if (isRunning(browser)) throw new Error('The dedicated Chrome process could not be stopped.');
 }
 
-export async function browserLogin({ timeoutMs = 600000, onStatus = () => {}, persist = false } = {}) {
+/**
+ * Wait for step 1 to end. Returns 'signed-in' once the profile holds a session,
+ * 'confirmed' when the user presses Enter on an interactive terminal, or
+ * 'closed' when the user quits that Chrome.
+ */
+async function waitForSignIn(browser, profile, signal, input) {
+  let confirmed = false;
+  const onData = () => { confirmed = true; };
+  const interactive = Boolean(input?.isTTY);
+  if (interactive) { input.on('data', onData); input.resume(); }
+  try {
+    while (isRunning(browser) && !confirmed) {
+      signal.throwIfAborted();
+      if (await sessionWritten(profile)) {
+        // Let Chrome finish writing before it is asked to quit.
+        await pause(1500, signal);
+        return 'signed-in';
+      }
+      await pause(500, signal);
+    }
+    return confirmed ? 'confirmed' : 'closed';
+  } finally {
+    if (interactive) { input.removeListener('data', onData); input.pause(); }
+  }
+}
+
+// Step 2: read the session out of a profile whose Chrome has exited.
+async function readProfileSession({ executable, profile, proxyServer, persist, signal, timeoutMs }) {
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  const forward = () => controller.abort(signal.reason);
+  signal.addEventListener('abort', forward, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error('No LeetGPU session was found in the sign-in window. Finish signing in before it closes, then run login again.')), timeoutMs);
+  let reader;
+  let endpoint;
+  let stopping = false;
+  try {
+    await rm(join(profile, 'DevToolsActivePort'), { force: true });
+    reader = spawn(executable, captureArguments(profile, proxyServer), { stdio: 'ignore' });
+    reader.once('error', () => controller.abort(new Error('Could not reopen the sign-in profile to read the session.')));
+    reader.once('exit', () => {
+      if (!stopping) controller.abort(new Error('Chrome exited before the session could be read. Run login again.'));
+    });
+    endpoint = await waitForEndpoint(profile, controller.signal);
+    return await waitForSession(endpoint, controller.signal, persist);
+  } finally {
+    stopping = true;
+    clearTimeout(timer);
+    signal.removeEventListener('abort', forward);
+    await stopOwnedBrowser(reader, endpoint);
+  }
+}
+
+export async function browserLogin({
+  timeoutMs = 600000, onStatus = () => {}, persist = false, proxy, input = process.stdin,
+} = {}) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('Login timeout must be a positive number.');
+  const proxyServer = proxy === undefined ? null : normalizeProxy(proxy);
   const executable = await chromeExecutable();
   const profile = await mkdtemp(join(tmpdir(), 'leetgpu-history-login-'));
   await chmod(profile, 0o700);
@@ -284,33 +406,35 @@ export async function browserLogin({ timeoutMs = 600000, onStatus = () => {}, pe
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
   let browser;
-  let endpoint;
-  let stopping = false;
   try {
-    onStatus('Opening a dedicated Chrome window. Sign in to LeetGPU there; it will close after login.');
-    browser = spawn(executable, [
-      `--user-data-dir=${profile}`, '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0',
-      '--no-first-run', '--no-default-browser-check', '--disable-sync', '--new-window', origin,
-    ], { stdio: 'ignore' });
-    browser.once('error', () => controller.abort(new Error('Could not start the dedicated Chrome window.')));
-    browser.once('exit', () => {
-      if (!stopping) controller.abort(new Error('The dedicated Chrome window closed before login completed.'));
-    });
-    endpoint = await waitForEndpoint(profile, controller.signal);
+    const fallback = input?.isTTY ? 'quit that Chrome or press Enter here' : 'quit that Chrome';
+    onStatus(`Opening a separate Chrome window${proxyServer ? ` through the proxy ${proxyServer}` : ''}. Sign in to LeetGPU there. `
+      + `It closes by itself once you are signed in; if it stays open afterwards, ${fallback}.`);
+    browser = spawn(executable, signInArguments(profile, proxyServer), { stdio: 'ignore' });
+    browser.once('error', () => controller.abort(new Error('Could not start the Chrome sign-in window.')));
+    const outcome = await waitForSignIn(browser, profile, controller.signal, input);
+    // Chrome must exit before its profile can be reopened.
+    await stopOwnedBrowser(browser);
+    onStatus('Reading the LeetGPU session from the sign-in window...');
     // The profile is deleted below, so for a persistent sign-in this CLI becomes
     // the only holder of the session and nothing else can spend its refresh token.
-    return await waitForSession(endpoint, controller.signal, persist === true);
+    return await readProfileSession({
+      executable, profile, proxyServer, persist: persist === true, signal: controller.signal,
+      timeoutMs: outcome === 'signed-in' ? 30000 : 15000,
+    });
   } finally {
-    stopping = true;
     clearTimeout(timer);
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
     try {
-      await stopOwnedBrowser(browser, endpoint);
+      await stopOwnedBrowser(browser);
     } finally {
       await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   }
 }
 
-export const __test = { captureSessionInPage, pageSocket, parseDevToolsPort, callCdp, stopOwnedBrowser, pickSession };
+export const __test = {
+  captureSessionInPage, pageSocket, parseDevToolsPort, callCdp, stopOwnedBrowser, pickSession,
+  signInArguments, captureArguments, sessionWritten, waitForSignIn, readProfileSession, SESSION_KEY,
+};

@@ -5,7 +5,7 @@ import { writeFile, readFile, mkdir, open } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { LeetGpuApi, challengeId, findChallenge, submissionRows, latestSubmission, formatSubmissions, table } from './api.mjs';
-import { browserLogin, saveSession, loadSession, logout, sessionPath } from './auth.mjs';
+import { browserLogin, normalizeProxy, saveSession, loadSession, logout, sessionPath } from './auth.mjs';
 import { dataDirectory } from './paths.mjs';
 import { ensureSession } from './renew.mjs';
 import { openSecretStore } from './secrets.mjs';
@@ -17,6 +17,7 @@ Usage: ./tools/leetgpu/leetgpu COMMAND
   login                        Open a local session-import page in your normal browser
   login --existing-browser     Read only an already-open LeetGPU tab (macOS Chrome)
   login --browser              Try automatic capture using a separate Chrome window
+  login --browser --proxy URL  Start that window through a proxy, e.g. http://host:3128
   login --no-browser --port N   Serve a loopback import page for an SSH tunnel
   login --stdin                Import a session from a pipe/file without echoing it
   login ... --persist          Stay signed in: also keep the refresh token and renew automatically
@@ -89,6 +90,7 @@ export async function main(args = process.argv.slice(2)) {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, strict: true, options: {
     help: { type: 'boolean', short: 'h' }, json: { type: 'boolean' }, browser: { type: 'boolean' },
     'existing-browser': { type: 'boolean' }, stdin: { type: 'boolean' }, persist: { type: 'boolean' },
+    proxy: { type: 'string' },
     'no-browser': { type: 'boolean' }, port: { type: 'string' },
     challenge: { type: 'string' }, language: { type: 'string' }, gpu: { type: 'string' },
     file: { type: 'string' }, output: { type: 'string' },
@@ -97,7 +99,7 @@ export async function main(args = process.argv.slice(2)) {
   const [command, subcommand, id] = positionals;
   const signature = command === 'submissions' ? `${command} ${subcommand}` : command;
   const allowed = {
-    login: ['browser', 'existing-browser', 'stdin', 'no-browser', 'port', 'persist'], status: ['json'], logout: [], challenges: ['json'], gpus: ['json'],
+    login: ['browser', 'existing-browser', 'stdin', 'no-browser', 'port', 'persist', 'proxy'], status: ['json'], logout: [], challenges: ['json'], gpus: ['json'],
     'submissions latest': ['json'],
     'submissions list': ['challenge', 'language', 'gpu', 'json'],
     'submissions code': ['json', 'file', 'output'],
@@ -121,6 +123,10 @@ export async function main(args = process.argv.slice(2)) {
     if (values.port !== undefined && (!/^\d+$/u.test(values.port) || !Number.isInteger(port) || port > 65535)) {
       throw new Error('--port must be an integer between 0 and 65535.');
     }
+    if (values.proxy !== undefined && !values.browser) {
+      throw new Error('--proxy is only supported with --browser, the mode that starts its own Chrome window.');
+    }
+    const proxy = values.proxy === undefined ? undefined : normalizeProxy(values.proxy);
     const persist = Boolean(values.persist);
     if (persist && values['existing-browser']) {
       // Each renewal replaces the refresh token, so sharing a session with a live tab signs one of them out.
@@ -133,7 +139,7 @@ export async function main(args = process.argv.slice(2)) {
     const login = values['existing-browser'] ? (await import('./chrome-session.mjs')).existingChromeSession
       : values.browser ? browserLogin : (await import('./manual-auth.mjs')).manualLogin;
     const session = values.stdin ? await (await import('./input-auth.mjs')).readSessionInput(undefined, { persist })
-      : await login({ onStatus: message => console.error(message), openBrowser: !values['no-browser'], port, persist });
+      : await login({ onStatus: message => console.error(message), openBrowser: !values['no-browser'], port, persist, proxy });
     const expires = new Date(session.expires_at * 1000).toISOString();
     if (persist) {
       await store.set(session.refresh_token);

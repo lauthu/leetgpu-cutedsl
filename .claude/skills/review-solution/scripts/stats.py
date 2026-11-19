@@ -44,6 +44,7 @@ def summarize(submissions):
     """Group successful, source-matched runs by GPU, then by version file."""
     groups = {}
     skipped = {}
+    ranked = {}
     for entry in submissions:
         gpu = entry.get("accelerator")
         latency = (entry.get("metrics") or {}).get("executionTime")
@@ -53,13 +54,19 @@ def summarize(submissions):
             continue
         runs = groups.setdefault(gpu, {}).setdefault(version, [])
         runs.append((Decimal(str(latency)), entry["metrics"].get("percentile")))
-    return groups, skipped
+        if entry["metrics"].get("rankedCount") is not None:
+            ranked.setdefault(gpu, set()).add(entry["metrics"]["rankedCount"])
+    # A percentile is a rank among this many submissions. Rows read at different
+    # times can disagree, and then no single base describes the table.
+    bases = {gpu: counts.pop() for gpu, counts in ranked.items() if len(counts) == 1}
+    return groups, skipped, bases
 
 
-def report(gpu, versions, skipped, first_version):
+def report(gpu, versions, skipped, first_version, base_count):
     names = sorted(versions, key=version_key)
     total = sum(len(versions[name]) for name in names)
-    lines = [f"### {gpu}（{total} 次成功提交）", ""]
+    ranking = f"，percentile 的排名基数 {base_count}" if base_count else ""
+    lines = [f"### {gpu}（{total} 次成功提交{ranking}）", ""]
     lines.append("| 版本 | 提交次数 | 最好 (ms) | 中位 (ms) | 相对首版 | Percentile |")
     lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
     # "相对首版" compares against the challenge's first version, on the same GPU.
@@ -135,7 +142,7 @@ def main():
     path = Path(sys.argv[1]) / "submissions.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        groups, skipped = summarize(data["submissions"])
+        groups, skipped, bases = summarize(data["submissions"])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"error: cannot read {path} ({type(error).__name__})", file=sys.stderr)
         return 1
@@ -147,7 +154,9 @@ def main():
     )
     # H100 is the repository's focus; other GPUs follow alphabetically.
     for gpu in sorted(groups, key=lambda name: (name != "H100", name)):
-        print(report(gpu, groups[gpu], skipped.get(gpu, 0), first_version))
+        print(
+            report(gpu, groups[gpu], skipped.get(gpu, 0), first_version, bases.get(gpu))
+        )
         print()
     return 0
 

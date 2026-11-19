@@ -7,7 +7,7 @@
 使用仓库自带的 `./tools/leetgpu/leetgpu`，需要 Node.js 22+，无需 npm install。实现位于 `tools/leetgpu/`，不依赖某个 coding agent 的私有运行时。详细认证、SSH 和 API 说明见 [工具 README](tools/leetgpu/README.md)。
 
 1. 先运行 `./tools/leetgpu/leetgpu status --json`。退出码 0 表示本机会话未过期，或已保存 refresh token、下一条命令会自动续期（`renewable: true`），都不需要登录；退出码 1 时按错误原因处理；退出码 127 表示找不到 Node.js 22+，这不是会话问题，应安装 Node 或设置 `LEETGPU_NODE`。这个检查不访问服务端。
-2. macOS 的默认方式是保持登录：`login --browser --persist`（即 `make login`）打开独立的 Chrome 窗口，用户登录一次后，refresh token 存入 macOS 钥匙串，之后的命令自动续期。登录提供商拒绝该窗口时，改用 `login --persist`（在无痕窗口登录后粘贴到本地页面），或只用一小时的 `login --existing-browser`（读取已登录的普通 Chrome 标签页，需要允许 Apple Events JavaScript；若未开启，说明具体设置并等待用户操作，不擅自更改浏览器权限）。`--persist` 必须使用独占的会话，不能与 `--existing-browser` 合用：每次续期都会更换 refresh token，与正在使用的标签页共用会话会使其中一方被登出。
+2. macOS 的默认方式是保持登录：`login --browser --persist`（即 `make login`）打开独立的 Chrome 窗口，用户登录一次后，refresh token 存入 macOS 钥匙串，之后的命令自动续期。网络无法直接访问登录提供商时加 `--proxy http://host:port`（`make login PROXY=...`），它只影响这个登录窗口；代理地址由用户提供，不写入仓库。登录提供商拒绝该窗口时，改用 `login --persist`（在无痕窗口登录后粘贴到本地页面），或只用一小时的 `login --existing-browser`（读取已登录的普通 Chrome 标签页，需要允许 Apple Events JavaScript；若未开启，说明具体设置并等待用户操作，不擅自更改浏览器权限）。`--persist` 必须使用独占的会话，不能与 `--existing-browser` 合用：每次续期都会更换 refresh token，与正在使用的标签页共用会话会使其中一方被登出。
 3. Linux/SSH 机器使用 `login --no-browser --port 8765`，让用户在本机通过同端口 SSH 转发访问打印的临时 URL；或者按工具 README 用 `login --stdin` 经 SSH 导入本机已授权的短期会话。认证界面上的用户操作仍需用户完成。
 4. 不让用户把密码、token 或完整会话粘贴到聊天、issue、PR 或命令参数中。不打印 session 文件，不提交凭据、原始认证数据或个人回执。只在用户指定的机器间传递其授权会话。
 5. 默认只保存 access token 和过期时间，有效期 1 小时。只有用户明确选择 `--persist` 时才保存 refresh token：macOS 存入钥匙串，其他平台需显式设置 `LEETGPU_SECRET_STORE=file`（0600 明文文件）。不读取、不打印、不转存钥匙串条目或该文件。续期被服务端拒绝时工具会删除失效的 refresh token 并要求重新登录；API 返回 401 时同样重新认证，不循环重试失效凭据。

@@ -538,3 +538,23 @@ test('CLI reads the challenge ID from an official folder name and refuses an unl
     await assert.rejects(stat(join(fixture.data, 'receipts')), { code: 'ENOENT' });
   });
 });
+
+test('login --proxy needs --browser and a well-formed proxy, checked before any browser starts', async () => {
+  await withFixture(async fixture => {
+    for (const mode of [[], ['--existing-browser'], ['--stdin'], ['--no-browser']]) {
+      const result = runFixture(fixture, ['login', ...mode, '--proxy', 'http://proxy.example:3128']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--proxy is only supported with --browser/u);
+    }
+    for (const proxy of ['proxy.example:3128', 'ftp://proxy.example', 'http://user:proxy-password@proxy.example:3128']) {
+      const result = runFixture(fixture, ['login', '--browser', '--persist', '--proxy', proxy]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--proxy must look like/u);
+      assert.equal(result.stderr.includes('proxy-password'), false);
+    }
+    const unrelated = runFixture(fixture, ['status', '--proxy', 'http://proxy.example:3128']);
+    assert.equal(unrelated.status, 1);
+    assert.match(unrelated.stderr, /not supported/u);
+    await assert.rejects(stat(fixture.sessionPath), { code: 'ENOENT' });
+  }, { authenticated: false });
+});

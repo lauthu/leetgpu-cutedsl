@@ -30,7 +30,7 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 - `run` 和 `submit` 会先在本地检查语法错误和未定义名称，检查失败时不联网。
 - `make help` 列出全部目标。
 
-截至 2026-11-19，`run` 和保持登录只通过了模拟测试，尚未用真实账号执行；详情见[工具 README](tools/leetgpu/README.md)。
+截至 2026-11-19，保持登录、自动续期和历史查询已用真实账号验证；`run` 只通过了模拟测试，尚未对真实服务执行。详情见[工具 README](tools/leetgpu/README.md)。
 
 ## 新增一个版本
 
@@ -42,10 +42,11 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 ## 登录
 
-在 macOS 上，`make login` 打开一个独立的 Chrome 窗口。登录后 refresh token 存入钥匙串，之后的命令自动续期，不需要再登录。
+在 macOS 上，`make login` 打开一个独立的 Chrome 窗口。在里面登录 LeetGPU，窗口会在几秒后自动关闭；refresh token 存入钥匙串，之后的命令自动续期，不需要再登录。
 
 | 情况 | 做法 |
 | --- | --- |
+| 网络无法直接访问登录提供商 | `make login PROXY=http://proxy.example:3128`：只让登录窗口走代理 |
 | 登录提供商拒绝该窗口 | `make login LOGIN_FLAGS=--persist`：在无痕窗口登录后粘贴，同样保持登录 |
 | 不想保存 refresh token | `make login LOGIN_FLAGS=--existing-browser`：读取已登录的 Chrome 标签页，每小时重新登录 |
 | 远程 Linux 或 SSH | `make login` 提供一个经 SSH 端口转发访问的导入页 |

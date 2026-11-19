@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import vm from 'node:vm';
@@ -10,7 +10,7 @@ process.env.LEETGPU_HISTORY_CONFIG_DIR = join(directory, 'config');
 process.env.LEETGPU_CONFIG_DIR = join(directory, 'config');
 // Keep logout() in these tests away from the real macOS Keychain.
 process.env.LEETGPU_SECRET_STORE = 'file';
-const { parseSession, refreshTokenOf, saveSession, loadSession, logout, sessionPath, __test } = await import('./auth.mjs');
+const { normalizeProxy, parseSession, refreshTokenOf, saveSession, loadSession, logout, sessionPath, __test } = await import('./auth.mjs');
 test.after(async () => { await rm(directory, { recursive: true, force: true }); });
 
 test('session parser returns only token and future expiry', () => {
@@ -136,4 +136,91 @@ test('a persistent browser sign-in fails at once when the signed-in page has no 
   for (const value of [signedIn, { ...signedIn, refresh_token: 'has space inside' }]) {
     assert.throws(() => __test.pickSession(value, true), error => error.code === 'NO_REFRESH_TOKEN' && /no usable refresh token/u.test(error.message) && !error.message.includes('access'));
   }
+});
+
+test('a sign-in proxy is normalized to scheme, host and port, and anything else is refused without echo', () => {
+  assert.equal(normalizeProxy('http://proxy.example:3128'), 'http://proxy.example:3128');
+  assert.equal(normalizeProxy(' http://10.0.0.1:3128/ '), 'http://10.0.0.1:3128');
+  assert.equal(normalizeProxy('HTTPS://Proxy.Example:8443'), 'https://proxy.example:8443');
+  assert.equal(normalizeProxy('socks5://127.0.0.1:1080'), 'socks5://127.0.0.1:1080');
+  assert.equal(normalizeProxy('http://[::1]:3128'), 'http://[::1]:3128');
+  const secret = 'proxy-password';
+  for (const value of [
+    undefined, null, 3128, '', 'proxy.example:3128', 'ftp://proxy.example:21', 'file:///etc/hosts', 'http://',
+    `http://user:${secret}@proxy.example:3128`, `http://proxy.example:3128/${secret}`, `http://proxy.example:3128?k=${secret}`,
+    `http://proxy.example:3128#${secret}`, 'http://proxy.example:3128 --remote-debugging-port=9222', `http://${'a'.repeat(2100)}:1`,
+  ]) {
+    assert.throws(() => normalizeProxy(value), error => /--proxy must look like/u.test(error.message) && !error.message.includes(secret));
+  }
+});
+
+test('the sign-in window has no debugging or automation switches; only the later read has them', () => {
+  const signIn = __test.signInArguments('/tmp/profile');
+  assert.equal(signIn.some(argument => /remote-debugging|headless|automation/u.test(argument)), false);
+  assert.equal(signIn.some(argument => argument.startsWith('--proxy')), false);
+  assert.equal(signIn[0], '--user-data-dir=/tmp/profile');
+  assert.equal(signIn.at(-1), 'https://leetgpu.com');
+  const capture = __test.captureArguments('/tmp/profile');
+  assert.equal(capture[0], '--user-data-dir=/tmp/profile');
+  for (const required of ['--headless=new', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0']) assert.equal(capture.includes(required), true);
+  // A static page of the same origin, so none of the site's scripts run while the session is read.
+  assert.equal(capture.at(-1), 'https://leetgpu.com/robots.txt');
+  for (const build of [__test.signInArguments, __test.captureArguments]) {
+    const proxied = build('/tmp/profile', 'http://proxy.example:3128');
+    assert.deepEqual(proxied.filter(argument => argument.startsWith('--proxy')), ['--proxy-server=http://proxy.example:3128']);
+    assert.deepEqual(proxied.filter(argument => !argument.startsWith('--proxy')), build('/tmp/profile'));
+  }
+});
+
+test('sign-in is detected only by the bare session key, not the key written when sign-in starts', async () => {
+  const profile = join(directory, 'detect-profile');
+  const storage = join(profile, 'Default', 'Local Storage', 'leveldb');
+  assert.equal(await __test.sessionWritten(profile), false);
+  await mkdir(storage, { recursive: true });
+  const key = __test.SESSION_KEY;
+  assert.equal(key, 'sb-yhdtysacdkqoquvkdwdd-auth-token');
+  await writeFile(join(storage, '000003.log'), Buffer.concat([Buffer.from('\u0001_https://leetgpu.com\u0000\u0001'), Buffer.from(`${key}-code-verifier`), Buffer.from([0x10, 0x01]), Buffer.from('verifier')]));
+  await writeFile(join(storage, 'LOCK'), key);
+  await writeFile(join(storage, 'MANIFEST-000001'), key);
+  assert.equal(await __test.sessionWritten(profile), false);
+  await writeFile(join(storage, '000004.log'), Buffer.concat([Buffer.from(`prefix ${key}-code-verifier then _https://leetgpu.com\u0000\u0001${key}`), Buffer.from([0x90, 0x02]), Buffer.from('{"access_token":"x"}')]));
+  assert.equal(await __test.sessionWritten(profile), true);
+  await rm(join(storage, '000004.log'));
+  await writeFile(join(storage, '000005.ldb'), key);
+  assert.equal(await __test.sessionWritten(profile), true);
+});
+
+test('waiting for sign-in ends on a detected session, on Enter, or when the window is quit', async () => {
+  const { EventEmitter } = await import('node:events');
+  const key = __test.SESSION_KEY;
+  const running = () => ({ pid: 1, exitCode: null, signalCode: null });
+  const signal = new AbortController().signal;
+  const empty = join(directory, 'wait-empty');
+  const storage = join(empty, 'Default', 'Local Storage', 'leveldb');
+  await mkdir(storage, { recursive: true });
+
+  const quit = running();
+  setTimeout(() => { quit.exitCode = 0; }, 60);
+  assert.equal(await __test.waitForSignIn(quit, empty, signal, { isTTY: false }), 'closed');
+
+  // An interactive terminal: Enter confirms, and the listener is removed afterwards.
+  const terminal = Object.assign(new EventEmitter(), { isTTY: true, resumed: 0, paused: 0, resume() { this.resumed += 1; }, pause() { this.paused += 1; } });
+  setTimeout(() => terminal.emit('data', '\n'), 60);
+  assert.equal(await __test.waitForSignIn(running(), empty, signal, terminal), 'confirmed');
+  assert.deepEqual([terminal.resumed, terminal.paused, terminal.listenerCount('data')], [1, 1, 0]);
+
+  // A pipe is never read, so piped input cannot end the wait by accident.
+  const pipe = Object.assign(new EventEmitter(), { isTTY: false });
+  const piped = running();
+  setTimeout(() => { pipe.emit('data', '\n'); piped.exitCode = 0; }, 60);
+  assert.equal(await __test.waitForSignIn(piped, empty, signal, pipe), 'closed');
+  assert.equal(pipe.listenerCount('data'), 0);
+
+  setTimeout(() => writeFile(join(storage, '000003.log'), `${key}\u0001{}`), 60);
+  assert.equal(await __test.waitForSignIn(running(), empty, signal, { isTTY: false }), 'signed-in');
+
+  const canceled = new AbortController();
+  await rm(join(storage, '000003.log'));
+  setTimeout(() => canceled.abort(new Error('LeetGPU login canceled.')), 60);
+  await assert.rejects(__test.waitForSignIn(running(), empty, canceled.signal, { isTTY: false }), /login canceled/u);
 });

@@ -29,7 +29,7 @@
 - **失效。** 服务端拒绝（HTTP 400/401/403）时，工具删除已失效的 refresh token 并提示重新登录；网络错误、429 或 5xx 时保留它，下次再试。refresh token 的有效期由 LeetGPU 的设置决定，未经核实。
 - **关闭。** `logout` 同时删除 access token 和 refresh token；之后做一次不带 `--persist` 的登录也会删除先前保存的 refresh token。两者都不会撤销服务端会话。
 
-截至 2026-11-19 的验证范围：钥匙串读写、续期请求格式和对无效 refresh token 的拒绝（真实服务返回 HTTP 400）已实际验证；用真实账号完成一次 `--persist` 登录和一次成功续期尚未执行，首次使用后在此更新。
+2026-11-19 已用真实账号验证：`login --browser --persist` 经 Google 登录成功，refresh token 写入钥匙串；随后一次续期成功，服务端返回新的 access token，钥匙串里的 refresh token 被替换，用新 token 的 API 请求正常。对无效 refresh token 的拒绝（HTTP 400）也已验证。refresh token 最长能用多久仍未知。
 
 ### 已登录的 macOS Chrome：自动读取
 
@@ -53,7 +53,23 @@ Chrome 必须开启 **View → Developer → Allow JavaScript from Apple Events*
 
 接收服务仅监听 `127.0.0.1`，使用随机 URL，检查 Host/Origin，10 分钟超时。接收后关闭；最终是否成功保存以终端提示为准。打开浏览器失败时服务继续等待，可手动打开打印的地址。
 
-`login --browser` 是可选的独立 Chrome/Chromium 临时 profile 自动捕获模式，可用 `LEETGPU_HISTORY_CHROME` 指定浏览器路径。Google 等登录提供商可能拒绝带 remote debugging 的浏览器；遇到该情况使用上面的普通浏览器路径。此模式只读取 LeetGPU 会话，结束后关闭专用窗口并删除临时 profile。
+`login --browser` 用一个临时 profile 的独立 Chrome/Chromium 完成登录，可用 `LEETGPU_HISTORY_CHROME` 指定浏览器路径。它分两步：
+
+1. **登录窗口。** 以普通方式启动 Chrome，不带任何调试或自动化参数。Google 会拒绝在带 remote debugging 的浏览器里登录（提示 "This browser or app may not be secure"），所以这一步不能带。
+2. **读取会话。** 检测到该 profile 的本地存储里写入了 LeetGPU 会话后，工具关闭登录窗口，再以无窗口（headless）方式重新打开同一个 profile，这次带上只监听回环地址的调试端口，在 `https://leetgpu.com/robots.txt` 这个不运行网站脚本的同源页面上读取会话。
+
+登录完成后窗口通常在几秒内自动关闭。如果一直不关，手动退出那个 Chrome；在交互式终端里也可以按回车。结束后删除临时 profile，所以浏览器里不会留下这次会话。
+
+2026-11-19 已用真实账号验证：改成两步之前，Google 在登录窗口里提示 "This browser or app may not be secure" 并拒绝登录；改成两步之后，同一账号经 Google 登录成功，会话被正确读回。其他登录提供商未测试。窗口仍被拒绝时，使用上面的普通浏览器粘贴方式。
+
+所在网络无法直接访问登录提供商（例如 Google）时，让这个窗口走代理：
+
+```sh
+./tools/leetgpu/leetgpu login --browser --persist --proxy http://proxy.example:3128
+make login PROXY=http://proxy.example:3128    # 等价写法
+```
+
+`--proxy` 接受 `http`、`https`、`socks4`、`socks5` 代理，写成 `协议://主机:端口`，不接受带用户名、密码或路径的地址。它只能与 `--browser` 合用，并且只影响上面两步启动的 Chrome：其中的所有请求（包括 LeetGPU 和登录提供商）都经过代理，CLI 自己的 API、续期和提交请求仍然直连。2026-11-19 已在本机用 headless Chrome 和一个本地监听端口验证，请求确实经由该代理发出；经真实代理完成一次登录尚未验证。
 
 ### 远程机器：SSH 转发导入页
 
@@ -146,7 +162,7 @@ HTTP 固定访问 `https://api.leetgpu.com`，GET 不跟随重定向，20 秒超
 | `submissions submit` | `wss://api.leetgpu.com/api/v1/ws/submit`，`action: "submit"`；等待上限 180 秒 |
 | `submissions run` | 同一 WebSocket，`action: "run"`；等待上限 180 秒 |
 
-`run` 的消息格式取自[社区 VS Code 扩展的传输实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/submissionTransport.ts#L20-L38)，平台输出字段（`type: "stdout"`、`output`）取自 2026-10-19 一次真实 submit 的回执。截至 2026-11-19，`run` 只通过了模拟测试，尚未对真实服务执行过；首次使用后在此更新结论，包括 run 是否会出现在提交历史中。
+`run` 的消息格式取自[社区 VS Code 扩展的传输实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/submissionTransport.ts#L20-L38)，平台输出字段（`type: "stdout"`、`output`）取自 2026-10-19 一次真实 submit 的回执。截至 2026-11-19，`run` 只通过了模拟测试，尚未对真实服务执行过；首次使用后在此更新结论，包括 run 是否会出现在提交历史中。同一天，`list`（含按官方目录名指定 challenge）、`code` 和 `latest` 已用续期后的会话对真实服务执行成功。
 
 这些是网站使用的接口，可能改变，不是官方 CLI 扩展。实现参考已核对的网站请求行为；接口调研资料（2026-10-19）：[LeetGPU web client](https://leetgpu.com/)、[社区 API 实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/apiClient.ts#L53-L64)、[官方认证 feature request](https://github.com/AlphaGPU/leetgpu-challenges/issues/304)。
 

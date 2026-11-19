@@ -31,6 +31,10 @@ LOGIN_FLAGS ?= --browser --persist
 else
 LOGIN_FLAGS ?= --no-browser --port 8765
 endif
+# PROXY=http://host:port starts the sign-in window through a proxy, for
+# networks that cannot reach the sign-in provider directly. It needs --browser
+# and affects that window only.
+LOGIN_ARGS = $(LOGIN_FLAGS) $(if $(PROXY),--proxy "$(PROXY)")
 
 .PHONY: help setup stubs challenges fmt lint records test check login session preflight run submit history stats
 
@@ -46,7 +50,7 @@ help:
 	@echo '  make test      Run the LeetGPU tool tests (needs Node.js 22+)'
 	@echo '  make check     lint + records + test'
 	@echo 'LeetGPU (needs Node.js 22+ and a login)'
-	@echo '  make login     Sign in ($(LOGIN_FLAGS))'
+	@echo '  make login     Sign in ($(LOGIN_FLAGS)); add PROXY=http://host:port to use a proxy'
 	@echo '  make run FILE=solutions/<challenge>/<version>.py      Run on the platform; not a submission'
 	@echo '  make submit FILE=solutions/<challenge>/<version>.py   Submit privately and write a receipt'
 	@echo '  make history CHALLENGE=<id-or-directory-name>         List submissions for LANGUAGE and GPU'
@@ -103,12 +107,12 @@ test:
 check: lint records test
 
 login:
-	$(LEETGPU) login $(LOGIN_FLAGS)
+	$(LEETGPU) login $(LOGIN_ARGS)
 
 # status succeeds while the access token is valid or can be renewed without
 # asking; only otherwise is a login needed.
 session:
-	@$(LEETGPU) status >/dev/null 2>&1 || $(LEETGPU) login $(LOGIN_FLAGS)
+	@$(LEETGPU) status >/dev/null 2>&1 || $(LEETGPU) login $(LOGIN_ARGS)
 
 # Catch what would certainly fail on the platform before spending a GPU run:
 # syntax errors and undefined names. Style findings never block a run.
