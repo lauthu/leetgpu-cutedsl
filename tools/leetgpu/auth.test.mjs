@@ -125,3 +125,15 @@ test('logout also removes a saved refresh token', async () => {
   assert.equal(await store.get(), null);
   assert.equal(await loadSession(), null);
 });
+
+test('a persistent browser sign-in fails at once when the signed-in page has no usable refresh token', () => {
+  const expires_at = Math.floor(Date.now() / 1000) + 1000;
+  const signedIn = { access_token: 'access', expires_at };
+  assert.equal(__test.pickSession(null, true), null);
+  assert.equal(__test.pickSession({ access_token: 'expired', expires_at: 1, refresh_token: 'kept-refresh-token' }, true), null);
+  assert.deepEqual(__test.pickSession({ ...signedIn, refresh_token: 'kept-refresh-token' }, false), signedIn);
+  assert.deepEqual(__test.pickSession({ ...signedIn, refresh_token: 'kept-refresh-token' }, true), { ...signedIn, refresh_token: 'kept-refresh-token' });
+  for (const value of [signedIn, { ...signedIn, refresh_token: 'has space inside' }]) {
+    assert.throws(() => __test.pickSession(value, true), error => error.code === 'NO_REFRESH_TOKEN' && /no usable refresh token/u.test(error.message) && !error.message.includes('access'));
+  }
+});

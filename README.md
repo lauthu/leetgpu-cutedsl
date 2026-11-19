@@ -10,21 +10,21 @@ Coding agents 请先读 [AGENTS.md](AGENTS.md)：认证、提交授权和记录�
 
 | Challenge | 版本演进 |
 | --- | --- |
-| [Vector Addition](solutions/vector-addition/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
+| [Vector Addition](solutions/1_vector_add/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
 
 ## 快速开始
 
 需要 Python 3、Node.js 22+、Git 和 GNU Make。
 
 ```sh
-make setup    # 建 .venv、装固定版本的 ruff、取回 CuTe DSL 源码供编辑器补全
+make setup    # 建 .venv、装固定版本的 ruff、取回 CuTe DSL 源码和官方题目定义
 make login    # 登录 LeetGPU 一次，之后自动续期
-make run    FILE=solutions/vector-addition/v2_vectorized.py   # 在平台上运行，不产生提交
-make submit FILE=solutions/vector-addition/v2_vectorized.py   # private 提交并写本地回执
+make run    FILE=solutions/1_vector_add/v2_vectorized.py   # 在平台上运行，不产生提交
+make submit FILE=solutions/1_vector_add/v2_vectorized.py   # private 提交并写本地回执
 make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GPU
 ```
 
-- challenge 由 `FILE` 所在目录名推断，目录名就是 LeetGPU 网址里的 slug；也可以用 `CHALLENGE=<ID 或 slug>` 指定。
+- 题目目录与[官方仓库](https://github.com/AlphaGPU/leetgpu-challenges)的目录同名，例如 `1_vector_add`。challenge ID 取自数字前缀，也可以用 `CHALLENGE=<ID>` 指定。
 - GPU 默认是 `H100`，用 `GPU=B200` 这样的参数覆盖。
 - `run` 用来看编译错误和样例结果，只有 `submit` 产生带 latency 的提交记录。两者都占用平台 GPU。
 - `run` 和 `submit` 会先在本地检查语法错误和未定义名称，检查失败时不联网。
@@ -34,10 +34,10 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 ## 新增一个版本
 
-1. 在 `solutions/<slug>/` 下新建 `vN_<说明>.py`，不覆盖旧版本。新题目先建目录，目录名取网址 `leetgpu.com/challenges/<slug>` 里的 slug。
-2. 反复 `make run FILE=...` 直到通过，再 `make submit FILE=...`。
-3. 用 `make history CHALLENGE=<slug>` 回读 latency 和 percentile，用 `./tools/leetgpu/leetgpu submissions code <提交 ID>` 核对平台保存的源码。
-4. 把结果写入该题的 `submissions.json` 和 `README.md`，字段和规则见 [AGENTS.md](AGENTS.md)。
+1. 新题目先建目录 `solutions/<id>_<name>/`，名字照抄 `.cache/leetgpu-challenges/challenges/<难度>/` 下的官方目录，例如 `2_matrix_multiplication`。那里还有题面、起始代码、容差和性能测试规模。
+2. 新建 `vN_<说明>.py`，不覆盖旧版本。
+3. 反复 `make run FILE=...` 直到通过，再 `make submit FILE=...`。
+4. 让 agent review 这道题，例如"review 1_vector_add"。它会拉取提交历史、更新 `submissions.json`，并按固定模板重写该题的 `README.md`。流程和模板在 [.claude/skills/review-solution/](.claude/skills/review-solution/)。
 5. 运行 `make check`，然后开 PR。
 
 ## 登录
@@ -66,7 +66,8 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 | 路径 | 内容 |
 | --- | --- |
-| `solutions/<challenge>/` | `README.md`（题意、版本与提交历史、演进过程、Q&A）、`submissions.json`（提交记录）和各版本源码 |
+| `solutions/<id>_<name>/` | `README.md`（题目、结果、分析、版本说明）、`NOTES.md`（学习问答）、`submissions.json`（提交记录）和各版本源码 |
+| `.claude/skills/review-solution/` | review 的流程、写作规则、README 模板和统计脚本（`make stats`） |
 | `tools/leetgpu/` | 非官方 LeetGPU CLI：认证、历史查询、运行和提交，无 npm 依赖 |
 | `tools/check_records.py` | 校验已记录源码的 SHA-256 |
 | `Makefile` | 上面所有命令的入口，人、VS Code 任务和 agent 共用 |
@@ -74,9 +75,11 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 | `.vscode/` | 编辑器设置、任务和推荐扩展 |
 | `.github/workflows/` | CI：lint、记录校验和工具测试 |
 | `AGENTS.md` | coding agents 的规则 |
+| `.cache/`（不入库） | `make setup` 取回的 CuTe DSL 源码和官方题目定义，只供阅读 |
 
 ## 约定
 
+- 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。
 - 已写入 `submissions.json` 的源码文件是冻结的，不格式化也不修改。`make check` 和 CI 会校验它的 SHA-256；要改动就新建版本。
 - 评测结果只引用平台记录。H100 与其他 GPU 分开记录，同一份代码的重复测量不算新的优化，percentile 是查询时的快照。
 - 平台记录尚未取得，或尚未与源码对应时，明确标为“待同步”。

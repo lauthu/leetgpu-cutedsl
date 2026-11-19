@@ -108,12 +108,12 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 ./tools/leetgpu/leetgpu submissions list --challenge 1 --language cute --gpu H100 --json
 ./tools/leetgpu/leetgpu submissions code SUBMISSION_ID --json
 ./tools/leetgpu/leetgpu submissions code SUBMISSION_ID --file solution.py --output /tmp/saved-solution.py
-./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py
-./tools/leetgpu/leetgpu submissions submit --challenge 1 --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py --json
+./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/1_vector_add/v2_vectorized.py
+./tools/leetgpu/leetgpu submissions submit --challenge 1 --language cute --gpu H100 --file solutions/1_vector_add/v2_vectorized.py --json
 ./tools/leetgpu/leetgpu logout
 ```
 
-- `--challenge` 接受数字 ID 或标题 slug（如 `matrix-multiplication`，与网站 URL 和本仓库目录名一致）。`run`/`submit` 省略它时，从 `--file` 向上最多三级目录名中取第一个与某个标题 slug 相同的目录；找不到或有歧义时报错，不会猜测。解析 slug 需要一次公开的 `challenges` 请求，解析结果打印在 stderr。
+- `--challenge` 接受三种写法：数字 ID；官方仓库的目录名 `<id>_<name>`（如 `1_vector_add`，只使用数字前缀，不比较名称）；标题 slug（如 `matrix-multiplication`，与网站 URL 一致）。`run`/`submit` 省略它时，从 `--file` 向上最多三级目录，取第一个符合后两种写法的目录名；找不到或有歧义时报错，不会猜测。后两种写法需要一次公开的 `challenges` 请求，用来确认 ID 存在并取得标题，解析结果打印在 stderr。本仓库的题目目录采用官方目录名。
 - `run` 对应网站的 Run 按钮：与 `submit` 使用同一连接和同一 private 载荷，只是 `action` 为 `run`，不写回执，退出码规则相同。它仍占用平台 GPU。
 - 不加 `--json` 时，`run`/`submit` 把平台输出（编译错误、测试结果）去除 ANSI 和控制字符后实时打印到 stderr，状态变化时打印一行 `[status]`；加 `--json` 时 stdout 只有 JSON，平台输出在 `events` 中。
 

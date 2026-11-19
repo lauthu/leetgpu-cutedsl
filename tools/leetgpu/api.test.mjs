@@ -84,3 +84,15 @@ test('challenge lookup matches title slugs in order and refuses ambiguous or mal
   assert.throws(() => findChallenge({ challenges: [{ id: 0, title: 'Zero' }] }, ['zero']), /positive integer/u);
   assert.throws(() => findChallenge({}, ['x']), /Unexpected challenges response/u);
 });
+
+test('an official folder name carries the challenge ID and must exist in the list', async () => {
+  const { findChallenge } = await import('./api.mjs');
+  const list = { challenges: [{ id: 1, title: 'Vector Addition' }, { id: 2, title: 'Matrix Multiplication' }, { id: 7 }] };
+  // The folder name need not resemble the title: only its numeric prefix is used.
+  assert.deepEqual(findChallenge(list, ['1_vector_add']), { id: '1', title: 'Vector Addition', slug: 'vector-addition' });
+  assert.deepEqual(findChallenge(list, ['drafts', '2_anything_at_all', 'vector-addition']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.deepEqual(findChallenge(list, ['matrix-multiplication', '1_vector_add']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.throws(() => findChallenge(list, ['999_not_listed']), /Challenge 999 \(from 999_not_listed\) is not in the LeetGPU challenge list/u);
+  assert.throws(() => findChallenge(list, ['7_no_title']), /not in the LeetGPU challenge list/u);
+  for (const name of ['0_zero', '01_padded', '2_Upper', '2-matrix', '_2_x', '2_']) assert.equal(findChallenge(list, [name]), null);
+});

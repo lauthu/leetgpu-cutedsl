@@ -21,7 +21,7 @@ known-third-party = ["cutlass"]
 [tool.ruff.lint.per-file-ignores]
 # Recorded submissions are frozen byte for byte (tools/check_records.py), so a
 # finding in one is ignored here instead of being fixed in the file.
-"solutions/vector-addition/v1_scalar.py" = ["F401"]
+"solutions/1_vector_add/v1_scalar.py" = ["F401"]
 
 # Editor analysis (Pylance) is configured in .vscode/settings.json, not in a
 # [tool.pyright] table here: Pylance did not pick up later edits to this file

@@ -211,6 +211,19 @@ function pageSocket(target, port) {
   } catch { return null; }
 }
 
+// What a signed-in page yields. A persistent sign-in that finds the page signed
+// in but without a usable refresh token fails at once: waiting cannot fix it,
+// and a silent wait would look the same as nobody signing in.
+function pickSession(value, persist) {
+  const session = parseSession(value);
+  if (!session || !persist) return session;
+  const refreshToken = refreshTokenOf(value);
+  if (!refreshToken) {
+    throw Object.assign(new Error('Signed in, but the page session has no usable refresh token, so it cannot be kept. Run login --browser without --persist for a one-hour session.'), { code: 'NO_REFRESH_TOKEN' });
+  }
+  return { ...session, refresh_token: refreshToken };
+}
+
 async function waitForSession(endpoint, signal, persist = false) {
   while (true) {
     signal.throwIfAborted();
@@ -227,12 +240,11 @@ async function waitForSession(endpoint, signal, persist = false) {
         const response = await callCdp(socket, 'Runtime.evaluate', {
           expression: `(${captureSessionInPage.toString()})(${persist})`, returnByValue: true,
         }, { signal });
-        const session = parseSession(response?.result?.value);
-        if (session && !persist) return session;
-        const refreshToken = refreshTokenOf(response?.result?.value);
-        if (session && refreshToken) return { ...session, refresh_token: refreshToken };
+        const session = pickSession(response?.result?.value, persist);
+        if (session) return session;
       }
-    } catch {
+    } catch (error) {
+      if (error.code === 'NO_REFRESH_TOKEN') throw error;
       signal.throwIfAborted();
       // OAuth navigation may briefly replace the owned page target.
     }
@@ -301,4 +313,4 @@ export async function browserLogin({ timeoutMs = 600000, onStatus = () => {}, pe
   }
 }
 
-export const __test = { captureSessionInPage, pageSocket, parseDevToolsPort, callCdp, stopOwnedBrowser };
+export const __test = { captureSessionInPage, pageSocket, parseDevToolsPort, callCdp, stopOwnedBrowser, pickSession };

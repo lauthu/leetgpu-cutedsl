@@ -510,3 +510,31 @@ test('a one-hour login replaces an earlier persistent sign-in, and logout remove
     assert.equal(runFixture(fixture, ['status', '--json']).status, 1);
   }, { authenticated: false });
 });
+
+test('CLI reads the challenge ID from an official folder name and refuses an unlisted one', async () => {
+  await withFixture(async fixture => {
+    const recordPath = join(fixture.directory, 'request.json');
+    // The name after the prefix deliberately differs from the title slug.
+    const directory = join(fixture.directory, 'solutions', '1_vector_add');
+    await mkdir(directory, { recursive: true });
+    const sourcePath = join(directory, 'v2_vectorized.py');
+    await writeFile(sourcePath, '# synthetic run source\n');
+    const result = runFixture(fixture, ['submissions', 'run', '--language', 'cute', '--gpu', 'H100', '--file', sourcePath], {
+      setup: fakePlatformSetup('success', recordPath),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(await readFile(recordPath, 'utf8')), { action: 'run', challengeId: 1 });
+    assert.match(result.stderr, /Running challenge 1 \(Vector Addition\) \/ cute \/ H100/u);
+    await rm(recordPath);
+    const unlisted = join(fixture.directory, 'solutions', '999_not_listed');
+    await mkdir(unlisted);
+    await writeFile(join(unlisted, 'v1.py'), '# synthetic run source\n');
+    const refused = runFixture(fixture, ['submissions', 'submit', '--language', 'cute', '--gpu', 'H100', '--file', join(unlisted, 'v1.py')], {
+      setup: fakePlatformSetup('success', recordPath),
+    });
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /Challenge 999 \(from 999_not_listed\) is not in the LeetGPU challenge list/u);
+    await assert.rejects(stat(recordPath), { code: 'ENOENT' });
+    await assert.rejects(stat(join(fixture.data, 'receipts')), { code: 'ENOENT' });
+  });
+});

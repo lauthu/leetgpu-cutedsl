@@ -17,7 +17,7 @@
 仓库根目录的 `Makefile` 是人、VS Code 任务和 coding agent 共用的入口，`make help` 列出全部目标。
 
 ```sh
-make setup                                         # .venv（固定版本的 ruff）+ 供编辑器阅读的 CuTe DSL 源码
+make setup                                         # .venv（固定版本的 ruff）+ CuTe DSL 源码 + 官方题目定义，后两者只供阅读
 make fmt                                           # 排序 import 并格式化
 make check                                         # lint + 提交记录校验 + 工具测试，不需要登录或 GPU
 make run FILE=solutions/<challenge>/<version>.py     # 在平台上运行，不产生提交
@@ -25,7 +25,8 @@ make submit FILE=solutions/<challenge>/<version>.py  # private 提交并写回�
 ```
 
 - `run`/`submit` 先做本地预检（语法错误、未定义名称），失败时不联网、不登录；随后只在会话既过期又无法自动续期时按平台默认方式登录，再调用 CLI。默认 `GPU=H100 LANGUAGE=cute`，可在命令行覆盖。
-- challenge 由 `FILE` 所在目录名推断：目录名与 LeetGPU 标题的 slug 相同（如 `solutions/matrix-multiplication/`）。推断不出时用 `CHALLENGE=<ID 或 slug>` 指定；CLI 会在 stderr 打印解析出的 challenge，提交前确认它是目标题目。
+- 题目目录与官方仓库的目录同名：`solutions/<id>_<name>/`，例如 `solutions/1_vector_add/`。challenge ID 取自数字前缀，不做名称匹配；CLI 会核对该 ID 存在，并在 stderr 打印 ID 和标题，提交前确认它是目标题目。目录名不符合这个形式时，用 `CHALLENGE=<ID>` 指定。
+- 官方题目定义在 `.cache/leetgpu-challenges/challenges/<难度>/<id>_<name>/`（`make challenges` 取回或更新）：`challenge.py` 给出容差、`solve` 签名和性能测试规模，`challenge.html` 是题面，`starter/starter.cute.py` 是起始代码。它的许可禁止再分发，只引用事实，不把内容复制进本仓库。
 - `run` 对应网站的 Run 按钮，用来看编译错误和样例结果；`submit` 才产生带 metrics 的提交记录。`run` 同样占用平台 GPU，只在用户要求运行或评测时执行。
 - macOS 没有 CUDA，CuTe DSL 也没有 macOS 的 wheel，本地无法编译或运行 kernel。`make setup` 取回的 `.cache/cutlass` 只供阅读和编辑器补全，不要尝试导入执行。
 - ruff 规则见 `pyproject.toml`；Pylance 配置在 `.vscode/settings.json`，不要在 `pyproject.toml` 里加 `[tool.pyright]`（Pylance 不会实时重读它，而且该表一出现就会把类型检查从默认的关闭变为开启）。类型检查有意关闭：CuTe 代码是被 trace 的，类型检查器会对平台上通过的 kernel 报出大量误报。
@@ -44,17 +45,21 @@ make submit FILE=solutions/<challenge>/<version>.py  # private 提交并写回�
 用户要求提交/评测时，在其授权范围内执行，无需对每次已授权操作重复确认。只要求调研、查询或改代码的任务不自动触发 GPU 提交。示例：
 
 ```sh
-./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py --json
-./tools/leetgpu/leetgpu submissions submit --challenge 1 --language cute --gpu H100 --file solutions/vector-addition/v2_vectorized.py --json
+./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/1_vector_add/v2_vectorized.py --json
+./tools/leetgpu/leetgpu submissions submit --challenge 1 --language cute --gpu H100 --file solutions/1_vector_add/v2_vectorized.py --json
 ```
 
-`--challenge` 可以是数字 ID 或标题 slug；`run`/`submit` 省略它时按源码所在目录推断。需要机器可读结果时加 `--json`；不加时平台输出（编译错误、测试结果）会实时打印到 stderr。
+`--challenge` 可以是数字 ID、官方目录名（`1_vector_add`）或标题 slug；`run`/`submit` 省略它时按源码所在目录推断。需要机器可读结果时加 `--json`；不加时平台输出（编译错误、测试结果）会实时打印到 stderr。
 
 提交固定为 private，并保存本地回执。退出码 2 表示平台确认的失败结果；退出码 1 需检查错误/回执。连接中断或超时后，先查询历史核对回执中的 ID、源码哈希和时间，不能直接重试，因为服务端可能已接收。成功后回读历史取得 metrics，再通过 code 接口核对源码。
 
+## Review
+
+用户要求 review、复盘或分析某道题、某个版本或其提交时，按 [.claude/skills/review-solution/SKILL.md](.claude/skills/review-solution/SKILL.md) 执行：拉取提交历史，更新 `submissions.json`，用 `make stats` 得到数字，再按同目录的 `assets/README.template.md` 重写该题的 `README.md`。不支持 skill 的 agent 直接阅读该文件。Review 不修改版本源码，也不触发 run 或 submit。
+
 ## 维护记录与验证
 
-- 每个解法版本保留独立源码，新增迭代不覆盖旧版本。在 challenge README 中说明变化、测试与实际结果。
+- 每个解法版本保留独立源码，新增迭代不覆盖旧版本。题目的 `README.md` 按 review 模板写题目、结果、分析和版本说明；学习问答放在同目录的 `NOTES.md`。
 - 已写入 `submissions.json` 的源码文件是冻结的：不格式化、不修 lint、不改注释，否则 `make records`（CI 也会运行）会因 SHA-256 不符而失败。需要改动时新建版本文件；冻结文件里的 lint 问题在 `pyproject.toml` 的 per-file-ignores 中忽略。
 - 提交元数据只保存必要字段：ID、GPU、语言、状态、时间、metrics、版本和源码匹配证据。保留原始 UTC 时间，显示时间注明时区。源码的精确 SHA-256 与经过归一化的匹配要区分。
 - H100 与其他 GPU 的结果分开记录。相同代码重新测量不记作新优化；percentile 是查询快照，不是永久固定的排名。

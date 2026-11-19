@@ -19,6 +19,8 @@ htmlcov/
 !.env.example
 .DS_Store
 .idea/
+# Per-machine Claude Code settings; shared skills under .claude/skills are tracked.
+.claude/settings.local.json
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json

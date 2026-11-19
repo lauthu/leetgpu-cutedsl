@@ -69,13 +69,23 @@ export function slugify(value) {
 }
 
 /**
- * Find one challenge by title slug. `names` are tried in order, so pass the
- * nearest directory first; a name that matches nothing is skipped.
+ * Find one challenge from directory or user-supplied names, tried in order, so
+ * pass the nearest directory first. A name shaped like the official
+ * repository's folders (`<id>_<name>`, e.g. `2_matrix_multiplication`) carries
+ * the ID itself; any other name is matched against title slugs, and skipped
+ * when it matches nothing.
  */
 export function findChallenge(payload, names) {
   const rows = payload?.challenges;
   if (!Array.isArray(rows)) throw new ApiError('Unexpected challenges response.');
   for (const name of names) {
+    const numbered = /^([1-9]\d*)_[a-z0-9_]+$/u.exec(name);
+    if (numbered) {
+      // The list is consulted only to confirm the ID exists and to show its title.
+      const row = rows.find(item => item && item.id === Number(numbered[1]) && typeof item.title === 'string');
+      if (!row) throw new ApiError(`Challenge ${numbered[1]} (from ${name}) is not in the LeetGPU challenge list.`);
+      return { id: challengeId(row.id), title: row.title, slug: slugify(row.title) };
+    }
     const slug = slugify(name);
     if (!slug) continue;
     const matches = rows.filter(row => row && typeof row.title === 'string' && slugify(row.title) === slug);

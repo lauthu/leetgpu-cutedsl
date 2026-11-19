@@ -33,8 +33,9 @@ Usage: ./tools/leetgpu/leetgpu COMMAND
 
 Languages: cuda, cute, triton, pytorch, jax, mojo
 GPU examples: T4, A100-80GB, H100, H200, B200
-CHALLENGE is a numeric ID or a title slug such as matrix-multiplication. run and
-submit infer it from the directories above SOURCE when --challenge is omitted.
+CHALLENGE is a numeric ID, an official folder name such as 2_matrix_multiplication,
+or a title slug such as matrix-multiplication. run and submit infer it from the
+directories above SOURCE when --challenge is omitted.
 
 For read commands, --json emits the unmodified response including metadata.
 For run and submit, --json emits the status and sanitized events; submit adds the receipt path.
@@ -61,7 +62,7 @@ async function resolveChallenge(api, value, sourcePath) {
   const names = [];
   if (value !== undefined) names.push(value);
   else {
-    // Nearest directory first, e.g. solutions/matrix-multiplication/v1.py.
+    // Nearest directory first, e.g. solutions/2_matrix_multiplication/v1.py.
     let directory = dirname(sourcePath);
     for (let depth = 0; depth < 3 && dirname(directory) !== directory; depth += 1) {
       names.push(basename(directory));
@@ -70,7 +71,7 @@ async function resolveChallenge(api, value, sourcePath) {
   }
   const found = findChallenge(await api.challenges(), names);
   if (found) return found;
-  throw new Error(value !== undefined ? 'No challenge has that ID or title slug. Use challenges to list them.'
+  throw new Error(value !== undefined ? 'No challenge has that ID, folder name or title slug. Use challenges to list them.'
     : 'Could not infer the challenge from the directories above --file. Pass --challenge ID.');
 }
 
@@ -271,7 +272,7 @@ export async function main(args = process.argv.slice(2)) {
   }
   if (subcommand === 'list') {
     if (!Object.hasOwn(LANGUAGE_FILES, values.language ?? '')) throw new Error(LANGUAGE_ERROR);
-    if (values.challenge === undefined) throw new Error('--challenge must be a numeric ID or a title slug.');
+    if (values.challenge === undefined) throw new Error('--challenge must be a numeric ID, an official folder name or a title slug.');
     const filters = { ...values, challenge: (await resolveChallenge(api, values.challenge)).id };
     const payload = await api.list(filters);
     if (values.json) { printJson(payload); return; }
