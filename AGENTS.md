@@ -27,7 +27,7 @@ make submit FILE=solutions/<challenge>/<version>.py  # private 提交并写回�
 - `run`/`submit` 先做本地预检（语法错误、未定义名称），失败时不联网、不登录；随后只在会话既过期又无法自动续期时按平台默认方式登录，再调用 CLI。默认 `GPU=H100 LANGUAGE=cute`，可在命令行覆盖。
 - 题目目录与官方仓库的目录同名：`solutions/<id>_<name>/`，例如 `solutions/1_vector_add/`。challenge ID 取自数字前缀，不做名称匹配；CLI 会核对该 ID 存在，并在 stderr 打印 ID 和标题，提交前确认它是目标题目。目录名不符合这个形式时，用 `CHALLENGE=<ID>` 指定。
 - 官方题目定义在 `.cache/leetgpu-challenges/challenges/<难度>/<id>_<name>/`（`make challenges` 取回或更新）：`challenge.py` 给出容差、`solve` 签名和性能测试规模，`challenge.html` 是题面，`starter/starter.cute.py` 是起始代码。它的许可禁止再分发，只引用事实，不把内容复制进本仓库。
-- `run` 对应网站的 Run 按钮，用来看编译错误和样例结果；`submit` 才产生带 metrics 的提交记录。`run` 同样占用平台 GPU，只在用户要求运行或评测时执行。
+- `run` 对应网站的 Run 按钮，只执行题面的示例测试，用来看编译错误和一个小例子的结果，不出现在提交历史里；`submit` 才跑全部测试并产生带 metrics 的提交记录。通过 `run` 不代表能通过 `submit`。`run` 同样占用平台 GPU，只在用户要求运行或评测时执行。
 - macOS 没有 CUDA，CuTe DSL 也没有 macOS 的 wheel，本地无法编译或运行 kernel。`make setup` 取回的 `.cache/cutlass` 只供阅读和编辑器补全，不要尝试导入执行。
 - ruff 规则见 `pyproject.toml`；Pylance 配置在 `.vscode/settings.json`，不要在 `pyproject.toml` 里加 `[tool.pyright]`（Pylance 不会实时重读它，而且该表一出现就会把类型检查从默认的关闭变为开启）。类型检查有意关闭：CuTe 代码是被 trace 的，类型检查器会对平台上通过的 kernel 报出大量误报。
 

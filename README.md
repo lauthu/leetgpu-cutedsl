@@ -26,11 +26,11 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 - 题目目录与[官方仓库](https://github.com/AlphaGPU/leetgpu-challenges)的目录同名，例如 `1_vector_add`。challenge ID 取自数字前缀，也可以用 `CHALLENGE=<ID>` 指定。
 - GPU 默认是 `H100`，用 `GPU=B200` 这样的参数覆盖。
-- `run` 用来看编译错误和样例结果，只有 `submit` 产生带 latency 的提交记录。两者都占用平台 GPU。
+- `run` 只执行题面的示例测试，用来看编译错误和一个小例子的结果；只有 `submit` 跑全部测试并产生带 latency 的提交记录。两者都占用平台 GPU。
 - `run` 和 `submit` 会先在本地检查语法错误和未定义名称，检查失败时不联网。
 - `make help` 列出全部目标。
 
-截至 2026-11-19，保持登录、自动续期和历史查询已用真实账号验证；`run` 只通过了模拟测试，尚未对真实服务执行。详情见[工具 README](tools/leetgpu/README.md)。
+保持登录、自动续期、历史查询和 `run` 都已在 2026-11-19 用真实账号验证，详情见[工具 README](tools/leetgpu/README.md)。
 
 ## 新增一个版本
 

@@ -130,7 +130,7 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 ```
 
 - `--challenge` 接受三种写法：数字 ID；官方仓库的目录名 `<id>_<name>`（如 `1_vector_add`，只使用数字前缀，不比较名称）；标题 slug（如 `matrix-multiplication`，与网站 URL 一致）。`run`/`submit` 省略它时，从 `--file` 向上最多三级目录，取第一个符合后两种写法的目录名；找不到或有歧义时报错，不会猜测。后两种写法需要一次公开的 `challenges` 请求，用来确认 ID 存在并取得标题，解析结果打印在 stderr。本仓库的题目目录采用官方目录名。
-- `run` 对应网站的 Run 按钮：与 `submit` 使用同一连接和同一 private 载荷，只是 `action` 为 `run`，不写回执，退出码规则相同。它仍占用平台 GPU。
+- `run` 对应网站的 Run 按钮：与 `submit` 使用同一连接和同一 private 载荷，只是 `action` 为 `run`，不写回执，退出码规则相同。它只执行题面的示例测试，用来看代码能否编译并跑通一个小例子；通过 `run` 不代表能通过 `submit` 的全部功能测试。它仍占用平台 GPU。
 - 不加 `--json` 时，`run`/`submit` 把平台输出（编译错误、测试结果）去除 ANSI 和控制字符后实时打印到 stderr，状态变化时打印一行 `[status]`；加 `--json` 时 stdout 只有 JSON，平台输出在 `events` 中。
 
 - `latest` 返回账户最近提交，不能按 GPU 筛选；查看 H100 使用显式带 challenge、language、gpu 的 `list`。`cute` 表示 CuTe DSL；用 `gpus` 查看当前 GPU/语言兼容性。
@@ -162,7 +162,7 @@ HTTP 固定访问 `https://api.leetgpu.com`，GET 不跟随重定向，20 秒超
 | `submissions submit` | `wss://api.leetgpu.com/api/v1/ws/submit`，`action: "submit"`；等待上限 180 秒 |
 | `submissions run` | 同一 WebSocket，`action: "run"`；等待上限 180 秒 |
 
-`run` 的消息格式取自[社区 VS Code 扩展的传输实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/submissionTransport.ts#L20-L38)，平台输出字段（`type: "stdout"`、`output`）取自 2026-10-19 一次真实 submit 的回执。截至 2026-11-19，`run` 只通过了模拟测试，尚未对真实服务执行过；首次使用后在此更新结论，包括 run 是否会出现在提交历史中。同一天，`list`（含按官方目录名指定 challenge）、`code` 和 `latest` 已用续期后的会话对真实服务执行成功。
+`run` 的消息格式取自[社区 VS Code 扩展的传输实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/submissionTransport.ts#L20-L38)，平台输出字段（`type: "stdout"`、`output`）取自 2026-10-19 一次真实 submit 的回执。2026-11-19 已对真实服务验证：`make run` 在 H100 上运行 `solutions/1_vector_add/v2_vectorized.py`，约 17 秒返回 `success`。平台只执行题面的示例测试（本题为 `N = 4`），并把输入和 "Test passed" 打印出来；不跑功能测试和性能测试，所以没有 latency。这次 run 没有出现在提交历史里，`latest` 也没有变化。同一天，`list`（含按官方目录名指定 challenge）、`code` 和 `latest` 也已用续期后的会话执行成功。
 
 这些是网站使用的接口，可能改变，不是官方 CLI 扩展。实现参考已核对的网站请求行为；接口调研资料（2026-10-19）：[LeetGPU web client](https://leetgpu.com/)、[社区 API 实现](https://github.com/GlowLED/LeetGPU-for-VsCode/blob/cdc7930f27a669680ef5eb394910841a3b249ce7/src/services/apiClient.ts#L53-L64)、[官方认证 feature request](https://github.com/AlphaGPU/leetgpu-challenges/issues/304)。
 
