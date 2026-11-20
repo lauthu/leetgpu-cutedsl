@@ -1,0 +1,28 @@
+{
+  // Format and sort imports on save with the ruff pinned in requirements-dev.txt,
+  // so the editor, `make fmt` and CI always agree.
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  // `make setup` checks out the CuTe DSL sources here, so completion, hover and
+  // go-to-definition work on a machine without CUDA.
+  "python.analysis.extraPaths": [".cache/cutlass/python/CuTeDSL"],
+  // Type rules are off on purpose. CuTe code is traced, not run as Python, so
+  // the checker reports false errors on kernels that pass on the platform
+  // (`.launch` "on None", `A[i] + B[i]` "not supported"). Syntax errors and
+  // unresolved imports are still reported.
+  "python.analysis.typeCheckingMode": "off",
+  "files.exclude": {
+    "**/__pycache__": true
+  },
+  "search.exclude": {
+    ".cache": true,
+    ".venv": true
+  }
+}

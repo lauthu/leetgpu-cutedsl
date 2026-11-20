@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { LeetGpuApi, submissionRows, latestSubmission, formatSubmissions } from './api.mjs';
+
+test('history request targets the official origin with filters and bearer auth', async () => {
+  const payload = { submissions: [{ id: 'abc', runtime: 0 }], histogram: [1] };
+  const api = new LeetGpuApi('test-token', async (url, options) => {
+    assert.equal(url.origin, 'https://api.leetgpu.com');
+    assert.equal(url.pathname, '/api/v1/submissions');
+    assert.deepEqual(Object.fromEntries(url.searchParams), { challengeId: '1', language: 'cute', accelerator: 'A100-80GB' });
+    assert.equal(options.headers.Authorization, 'Bearer test-token');
+    assert.equal(options.method, 'GET');
+    assert.equal(options.redirect, 'error');
+    return Response.json(payload);
+  });
+  assert.deepEqual(await api.list({ challenge: 1, language: 'cute', gpu: 'A100-80GB' }), payload);
+});
+
+test('public reads never send the stored bearer token', async () => {
+  const api = new LeetGpuApi('private-value', async (_, options) => {
+    assert.equal(options.headers.Authorization, undefined);
+    return Response.json({ challenges: [] });
+  });
+  await api.challenges();
+});
+
+test('requests reject external origins, missing auth, and malformed identifiers', async () => {
+  let called = false;
+  const api = new LeetGpuApi(null, async () => { called = true; });
+  await assert.rejects(api.get('https://example.com/api/v1/submissions'), /Invalid/);
+  await assert.rejects(api.get('//example.com/api/v1/submissions'), /Invalid/);
+  await assert.rejects(api.latest(), /login/);
+  assert.throws(() => api.code('../me'), /Invalid/);
+  assert.throws(() => api.list({ challenge: 0, language: 'cute', gpu: 'H100' }), /positive integer/);
+  assert.equal(called, false);
+});
+
+for (const status of [401, 403, 404, 429, 500, 302]) {
+  test(`HTTP ${status} exposes no raw response content or credentials`, async () => {
+    const api = new LeetGpuApi('private-value', async () => new Response('private-value', { status }));
+    await assert.rejects(api.latest(), error => !error.message.includes('private-value') && error.status === status);
+  });
+}
+
+test('handles empty history, no latest submission, malformed JSON and network errors', async () => {
+  const empty = new LeetGpuApi('t', async () => new Response(null, { status: 204 }));
+  assert.equal(await empty.latest(), null);
+  assert.equal(latestSubmission(null), null);
+  assert.equal(latestSubmission({ submission: null }), null);
+  assert.deepEqual(submissionRows({ submissions: [] }), []);
+  assert.deepEqual(submissionRows([]), []);
+  assert.throws(() => submissionRows({ unexpected: [] }), /Unexpected/);
+  const invalid = new LeetGpuApi('t', async () => new Response('not-json'));
+  await assert.rejects(invalid.latest(), /invalid JSON/);
+  const broken = new LeetGpuApi('private-value', async () => { throw new Error('private-value'); });
+  await assert.rejects(broken.latest(), error => !error.message.includes('private-value'));
+});
+
+test('code preserves multiple files and JSON contents without executing or decoding', async () => {
+  const files = [{ name: 'a.cu', content: 'int x = 1;\n' }, { name: '../b.h', content: 'hello' }];
+  const api = new LeetGpuApi('t', async url => {
+    assert.equal(url.pathname, '/api/v1/submissions/id-123/code');
+    return Response.json({ files });
+  });
+  assert.deepEqual((await api.code('id-123')).files, files);
+});
+
+test('table preserves zero runtime and strips terminal control characters', () => {
+  const text = formatSubmissions([{ id: 'a', status: '\x1b[31msuccess\n', metrics: { executionTime: 0, percentile: 99.58 } }], { challenge: 1 });
+  assert.match(text, /0/);
+  assert.match(text, /99\.58/);
+  assert.match(text, /RUNTIME \(ms\)/);
+  assert.ok(!text.includes('\x1b'));
+});
+
+test('challenge lookup matches title slugs in order and refuses ambiguous or malformed lists', async () => {
+  const { slugify, findChallenge } = await import('./api.mjs');
+  assert.equal(slugify('General Matrix Multiplication (GEMM)'), 'general-matrix-multiplication-gemm');
+  assert.equal(slugify('  Café — 2D  '), 'cafe-2d');
+  const list = { challenges: [{ id: 1, title: 'Vector Addition' }, { id: 2, title: 'Matrix Multiplication' }, null, { id: 3 }] };
+  assert.deepEqual(findChallenge(list, ['drafts', 'matrix-multiplication', 'vector-addition']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.equal(findChallenge(list, ['solutions', '', '---']), null);
+  assert.throws(() => findChallenge({ challenges: [{ id: 1, title: 'Same' }, { id: 2, title: 'same' }] }, ['same']), /More than one/u);
+  assert.throws(() => findChallenge({ challenges: [{ id: 0, title: 'Zero' }] }, ['zero']), /positive integer/u);
+  assert.throws(() => findChallenge({}, ['x']), /Unexpected challenges response/u);
+});
+
+test('an official folder name carries the challenge ID and must exist in the list', async () => {
+  const { findChallenge } = await import('./api.mjs');
+  const list = { challenges: [{ id: 1, title: 'Vector Addition' }, { id: 2, title: 'Matrix Multiplication' }, { id: 7 }] };
+  // The folder name need not resemble the title: only its numeric prefix is used.
+  assert.deepEqual(findChallenge(list, ['1_vector_add']), { id: '1', title: 'Vector Addition', slug: 'vector-addition' });
+  assert.deepEqual(findChallenge(list, ['drafts', '2_anything_at_all', 'vector-addition']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.deepEqual(findChallenge(list, ['matrix-multiplication', '1_vector_add']), { id: '2', title: 'Matrix Multiplication', slug: 'matrix-multiplication' });
+  assert.throws(() => findChallenge(list, ['999_not_listed']), /Challenge 999 \(from 999_not_listed\) is not in the LeetGPU challenge list/u);
+  assert.throws(() => findChallenge(list, ['7_no_title']), /not in the LeetGPU challenge list/u);
+  for (const name of ['0_zero', '01_padded', '2_Upper', '2-matrix', '_2_x', '2_']) assert.equal(findChallenge(list, [name]), null);
+});
+
+test('leaderboard requests carry both filters and malformed responses are refused', async () => {
+  const { LeetGpuApi, leaderboardRows } = await import('./api.mjs');
+  const calls = [];
+  const api = new LeetGpuApi('token', async url => { calls.push(String(url)); return Response.json({ leaderboard: [] }); });
+  await api.leaderboard({ challenge: '2', language: 'cute', gpu: 'A100-80GB' });
+  assert.deepEqual(calls, ['https://api.leetgpu.com/api/v1/challenges/2/leaderboard?language=cute&accelerator=A100-80GB']);
+  assert.throws(() => api.leaderboard({ challenge: '2', language: 'cute' }), /required/u);
+  assert.throws(() => api.leaderboard({ challenge: 'two', language: 'cute', gpu: 'H100' }), /positive integer/u);
+  assert.deepEqual(leaderboardRows({ leaderboard: [] }), []);
+  assert.equal(leaderboardRows({ leaderboard: [{ displayName: 'a', executionTime: 0 }] }).length, 1);
+  for (const payload of [null, {}, { leaderboard: 'x' }, { leaderboard: [null] }, { leaderboard: [{ executionTime: '0.1' }] }, { leaderboard: [{ displayName: 'a' }] }]) {
+    assert.throws(() => leaderboardRows(payload), /Unexpected leaderboard response/u);
+  }
+});

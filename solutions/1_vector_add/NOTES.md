@@ -1,25 +1,6 @@
-# Vector Addition
+# Vector Addition · 学习笔记
 
-[LeetGPU 题目](https://leetgpu.com/challenges/vector-addition)
-
-输入 `A`、`B` 和输出 `C` 是 GPU 上长度为 `N` 的连续一维 `float32` Tensor，题目约束为 `1 <= N <= 100,000,000`，性能测试使用 `N = 25,000,000`。计算 `C[i] = A[i] + B[i]`，其中 `0 <= i < N`，结果直接写入 `C`。
-
-## 版本与提交历史
-
-2026-10-19 整理入库。**已有平台结果，待核对版本后同步。** 当前尚未取得可对应到以下源码版本的 LeetGPU 提交时间、评测状态、latency 和 GPU 信息；本次整理日期与平台提交日期分别记录。
-
-| 版本 / 源码 | 整理入库日期 | LeetGPU 提交时间 | 评测状态 | Latency | GPU |
-|---|---|---|---|---|---|
-| [v1 · Scalar](v1_scalar.py) | 2026-10-19 | 未取得 | 待核对已有平台记录 | 待同步 | 待同步 |
-| [v2 · Vectorized](v2_vectorized.py) | 2026-10-19 | 未取得 | 待核对已有平台记录 | 待同步 | 待同步 |
-
-## 演进过程
-
-**v1：一个线程处理一个元素。** 使用 256 个线程的 block，通过 `bidx * block_size + tidx` 计算下标，检查边界后直接读 A/B、相加、写 C。这版用于建立 CUDA 执行模型与 CuTe Tensor 索引的对应关系。
-
-**v2：一个线程处理四个元素。** 每个 block 处理 1024 个元素，用 thread/value layout 分配元素，构造每线程视图，通过寄存器 fragment 与 `autovec_copy` 表达搬运和计算。启动前检查三个基地址的 16 字节对齐，满足时向编译器补充对齐信息；完整 tile 使用向量化路径，尾部逐元素检查边界。这些改变旨在减少访存指令与 block 调度开销，是否带来加速以对应平台结果为准。
-
-本次本地检查范围为 Python 语法与源码静态检查；本地环境没有 CUDA GPU，未在本地完成 CuTe 编译、GPU 正确性或性能验证。已有平台实测结果需要与保留的源码版本核对后再补入上表。
+学习中的问答，针对 [v2_vectorized.py](v2_vectorized.py)。评测结果和版本说明见 [README.md](README.md)。
 
 ## Q&A
 

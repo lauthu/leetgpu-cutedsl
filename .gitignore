@@ -19,7 +19,18 @@ htmlcov/
 !.env.example
 .DS_Store
 .idea/
-.vscode/
+# Per-machine Claude Code settings; shared skills under .claude/skills are tracked.
+.claude/settings.local.json
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+node_modules/
+.leetgpu/
+session.json
+*.session.json
+.session-*.tmp
+receipts/
 
 # Generated compiler and profiler output
 .cache/

@@ -1,0 +1,43 @@
+name: Tool tests
+
+# Pull requests are the only route into main, so run once per PR update and
+# once on main after a merge instead of twice for every branch push.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint and records
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint and format check with the pinned ruff (also catches Python syntax errors)
+        run: make lint
+      - name: Recorded solution files still match submissions.json
+        run: make records
+
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run tool tests without credentials or a GPU
+        run: make test
+      - name: Launcher prints help
+        run: tools/leetgpu/leetgpu --help
