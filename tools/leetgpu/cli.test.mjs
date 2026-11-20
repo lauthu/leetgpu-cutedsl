@@ -558,3 +558,88 @@ test('login --proxy needs --browser and a well-formed proxy, checked before any 
     await assert.rejects(stat(fixture.sessionPath), { code: 'ENOENT' });
   }, { authenticated: false });
 });
+
+// Leaderboards for two languages; other users' names must never reach the output.
+function leaderboardSetup({ nameStatus = 200 } = {}) {
+  return `
+    const { appendFileSync } = await import('node:fs');
+    globalThis.fetch = async (url, init) => {
+      const address = new URL(String(url));
+      if (process.env.REQUEST_LOG) appendFileSync(process.env.REQUEST_LOG, address.pathname + address.search + ' ' + Boolean(init.headers.Authorization) + '\\n');
+      if (address.pathname.endsWith('/challenges')) return Response.json(${JSON.stringify(challengeList)});
+      if (address.pathname.endsWith('/accelerators')) return Response.json({ accelerators: ['H100'], supportedLanguages: { H100: ['cute', 'cuda', 'not-a-language'] } });
+      if (address.pathname.endsWith('/me/display-name')) return ${nameStatus} === 200 ? Response.json({ displayName: 'my-own-name' }) : new Response('{}', { status: ${nameStatus} });
+      const rows = address.searchParams.get('language') === 'cuda'
+        ? [{ displayName: 'secret-other-name', executionTime: 0.1 }, { displayName: 'secret-third-name', executionTime: 0.11 }, { displayName: 'secret-other-name', executionTime: 0.12 }]
+        : [{ displayName: 'secret-other-name', executionTime: 0.23 }, { displayName: 'my-own-name', executionTime: 0.234 }];
+      return Response.json({ leaderboard: rows });
+    };
+  `;
+}
+
+test('leaderboard lists top times per language, fastest language first, and marks only the caller without names', async () => {
+  await withFixture(async fixture => {
+    const log = join(fixture.directory, 'requests.log');
+    fixture.env.REQUEST_LOG = log;
+    const result = runFixture(fixture, ['leaderboard', '--challenge', '1_vector_add', '--gpu', 'H100'], { setup: leaderboardSetup() });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, [
+      'LANGUAGE  #1 (ms)  #2 (ms)  #3 (ms)',
+      'cuda      0.1      0.11     0.12',
+      'cute      0.23     0.234 *',
+      '',
+    ].join('\n'));
+    assert.match(result.stderr, /Challenge 1 \(Vector Addition\) on H100/u);
+    for (const text of [result.stdout, result.stderr]) assert.equal(/secret-|my-own-name/u.test(text), false);
+    const requests = (await readFile(log, 'utf8')).trim().split('\n');
+    assert.deepEqual(requests, [
+      '/api/v1/challenges false',
+      '/api/v1/settings/accelerated/accelerators false',
+      '/api/v1/me/display-name true',
+      '/api/v1/challenges/1/leaderboard?language=cute&accelerator=H100 true',
+      '/api/v1/challenges/1/leaderboard?language=cuda&accelerator=H100 true',
+    ]);
+  });
+});
+
+test('leaderboard JSON carries ranks, times and a mine flag only, and still works when the name lookup fails', async () => {
+  await withFixture(async fixture => {
+    const one = runFixture(fixture, ['leaderboard', '--challenge', '1', '--gpu', 'H100', '--language', 'cute', '--json'], { setup: leaderboardSetup() });
+    assert.equal(one.status, 0, one.stderr);
+    assert.deepEqual(JSON.parse(one.stdout), { challengeId: 1, accelerator: 'H100', languages: { cute: [
+      { rank: 1, executionTime: 0.23, mine: false }, { rank: 2, executionTime: 0.234, mine: true },
+    ] } });
+    assert.equal(/secret-|my-own-name/u.test(one.stdout + one.stderr), false);
+    const unnamed = runFixture(fixture, ['leaderboard', '--challenge', '1', '--gpu', 'H100', '--json'], { setup: leaderboardSetup({ nameStatus: 500 }) });
+    assert.equal(unnamed.status, 0, unnamed.stderr);
+    const boards = JSON.parse(unnamed.stdout).languages;
+    assert.deepEqual(Object.keys(boards), ['cuda', 'cute']);
+    assert.equal(Object.values(boards).flat().some(entry => entry.mine), false);
+  });
+});
+
+test('leaderboard refuses missing or unsupported targets before asking for any leaderboard', async () => {
+  await withFixture(async fixture => {
+    const log = join(fixture.directory, 'requests.log');
+    fixture.env.REQUEST_LOG = log;
+    for (const [args, pattern] of [
+      [['leaderboard', '--challenge', '1'], /needs --challenge and --gpu/u],
+      [['leaderboard', '--gpu', 'H100'], /needs --challenge and --gpu/u],
+      [['leaderboard', '--challenge', '1', '--gpu', 'H100', '--language', 'fortran'], /--language must be/u],
+      [['leaderboard', '--challenge', '1', '--gpu', 'H100', '--language', 'pytorch'], /not listed as supported/u],
+      [['leaderboard', '--challenge', '1', '--gpu', 'T4'], /GPU is not listed/u],
+      [['leaderboard', '--challenge', '1', '--gpu', 'H100', '--file', 'x.py'], /not supported/u],
+    ]) {
+      const result = runFixture(fixture, args, { setup: leaderboardSetup() });
+      assert.equal(result.status, 1, args.join(' '));
+      assert.match(result.stderr, pattern);
+    }
+    const requests = await readFile(log, 'utf8').catch(() => '');
+    assert.equal(requests.includes('leaderboard'), false);
+  });
+  await withFixture(async fixture => {
+    const result = runFixture(fixture, ['leaderboard', '--challenge', '1', '--gpu', 'H100'], { setup: leaderboardSetup() });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /login/u);
+  }, { authenticated: false });
+});

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { writeFile, readFile, mkdir, open } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { LeetGpuApi, challengeId, findChallenge, submissionRows, latestSubmission, formatSubmissions, table } from './api.mjs';
+import { LeetGpuApi, challengeId, findChallenge, leaderboardRows, submissionRows, latestSubmission, formatSubmissions, table } from './api.mjs';
 import { browserLogin, normalizeProxy, saveSession, loadSession, logout, sessionPath } from './auth.mjs';
 import { dataDirectory } from './paths.mjs';
 import { ensureSession } from './renew.mjs';
@@ -26,6 +26,8 @@ Usage: ./tools/leetgpu/leetgpu COMMAND
   logout                       Delete the locally saved access token and refresh token
   challenges [--json]          List public challenge IDs and titles
   gpus [--json]                List accelerator names and supported languages
+  leaderboard --challenge CHALLENGE --gpu GPU [--language LANGUAGE] [--json]
+                               Top times per language, without other users' names
   submissions latest [--json]
   submissions list --challenge CHALLENGE --language LANGUAGE --gpu GPU [--json]
   submissions code ID [--json] [--file NAME] [--output NEW_FILE]
@@ -100,6 +102,7 @@ export async function main(args = process.argv.slice(2)) {
   const signature = command === 'submissions' ? `${command} ${subcommand}` : command;
   const allowed = {
     login: ['browser', 'existing-browser', 'stdin', 'no-browser', 'port', 'persist', 'proxy'], status: ['json'], logout: [], challenges: ['json'], gpus: ['json'],
+    leaderboard: ['challenge', 'gpu', 'language', 'json'],
     'submissions latest': ['json'],
     'submissions list': ['challenge', 'language', 'gpu', 'json'],
     'submissions code': ['json', 'file', 'output'],
@@ -253,6 +256,43 @@ export async function main(args = process.argv.slice(2)) {
         if (result.status !== 'success') process.exitCode = 2;
       } finally { await handle.close(); }
     });
+    return;
+  }
+  if (command === 'leaderboard') {
+    if (values.challenge === undefined || !values.gpu) throw new Error('leaderboard needs --challenge and --gpu.');
+    if (values.language !== undefined && !Object.hasOwn(LANGUAGE_FILES, values.language)) throw new Error(LANGUAGE_ERROR);
+    const challenge = await resolveChallenge(api, values.challenge);
+    const supported = (await api.accelerators()).supportedLanguages?.[values.gpu];
+    if (!Array.isArray(supported)) throw new Error('That GPU is not listed. Check gpus.');
+    if (values.language && !supported.includes(values.language)) {
+      throw new Error('This GPU/language combination is not listed as supported. Check gpus.');
+    }
+    const languages = values.language ? [values.language] : supported.filter(language => Object.hasOwn(LANGUAGE_FILES, language));
+    // Used only to mark the caller's own entries; no name is ever printed.
+    let own = null;
+    try { own = (await api.displayName())?.displayName ?? null; } catch { /* Marking is optional. */ }
+    const boards = [];
+    for (const language of languages) {
+      const rows = leaderboardRows(await api.leaderboard({ challenge: challenge.id, language, gpu: values.gpu }));
+      boards.push({ language, entries: rows.map((row, index) => ({
+        rank: index + 1, executionTime: row.executionTime, mine: typeof own === 'string' && row.displayName === own,
+      })) });
+    }
+    // Fastest language first; languages without entries last.
+    boards.sort((a, b) => (a.entries[0]?.executionTime ?? Infinity) - (b.entries[0]?.executionTime ?? Infinity));
+    if (values.json) {
+      printJson({ challengeId: Number(challenge.id), accelerator: values.gpu,
+        languages: Object.fromEntries(boards.map(board => [board.language, board.entries])) });
+      return;
+    }
+    const depth = Math.max(1, ...boards.map(board => board.entries.length));
+    const headers = ['LANGUAGE', ...Array.from({ length: depth }, (_, index) => `#${index + 1} (ms)`)];
+    console.log(table(headers, boards.map(board => [board.language,
+      ...Array.from({ length: depth }, (_, index) => {
+        const entry = board.entries[index];
+        return entry ? `${entry.executionTime}${entry.mine ? ' *' : ''}` : '';
+      })])));
+    console.error(`Challenge ${challenge.id}${challenge.title ? ` (${plainText(challenge.title)})` : ''} on ${values.gpu}: the platform's top entries per language. * marks your own entry.`);
     return;
   }
   if (command === 'challenges') {

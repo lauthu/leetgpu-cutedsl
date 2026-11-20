@@ -42,7 +42,7 @@ make submit FILE=solutions/<challenge>/<version>.py  # private 提交并写回�
 
 `latest` 是账户最近一次提交，可能来自其他 GPU；H100 历史必须使用显式过滤的 `list`。返回记录不保证覆盖完整历史，空列表也不证明账号没有历史。
 
-用户要求提交/评测时，在其授权范围内执行，无需对每次已授权操作重复确认。只要求调研、查询或改代码的任务不自动触发 GPU 提交。示例：
+用户要求提交/评测时，在其授权范围内执行，无需对每次已授权操作重复确认。只要求调研、查询或改代码的任务不自动触发 GPU 提交。LeetGPU 每天的提交有配额：`run` 和 `submit` 都按消耗配额对待，不做只为测量的重复提交，也不主动建议这样做。示例：
 
 ```sh
 ./tools/leetgpu/leetgpu submissions run --language cute --gpu H100 --file solutions/1_vector_add/v2_vectorized.py --json
@@ -55,11 +55,19 @@ make submit FILE=solutions/<challenge>/<version>.py  # private 提交并写回�
 
 ## Review
 
-用户要求 review、复盘或分析某道题、某个版本或其提交时，按 [.claude/skills/review-solution/SKILL.md](.claude/skills/review-solution/SKILL.md) 执行：拉取提交历史，更新 `submissions.json`，用 `make stats` 得到数字，再按同目录的 `assets/README.template.md` 重写该题的 `README.md`。不支持 skill 的 agent 直接阅读该文件。Review 不修改版本源码，也不触发 run 或 submit。
+Review 的含义是代码评审加性能机会：代码是否正确、清楚、没有多余的东西；离最好成绩多远；还有哪些机会，哪个最值得先试。只汇总历史数字不算 review。
+
+用户要求 review、复盘或分析某道题、某个版本或其提交时，按 [.claude/skills/review-solution/SKILL.md](.claude/skills/review-solution/SKILL.md) 执行：同步提交历史并更新 `submissions.json`，用 `make stats` 和 `make leaderboard` 取数，逐版本评审代码，按预期收益排出性能机会，再按同目录的 `assets/README.template.md` 重写该题的 `README.md`。不支持 skill 的 agent 直接阅读该文件。
+
+三条边界：
+
+- **不花配额。** Review 不触发 run 或 submit，不修改版本源码，建议里也不包含重复提交同一份代码。每个性能机会是一个新版本、一次提交。
+- **只看一个 GPU。** 目标 GPU 由 `make stats` 从提交历史判断；它报告"不明确"时问用户，不要猜。
+- **只在 CuTe DSL 内比较。** 参照是 CuTe 在目标 GPU 上的排行榜，不与 CUDA 或其他语言比较。排行榜只取时间，不记录别人的名字。
 
 ## 维护记录与验证
 
-- 每个解法版本保留独立源码，新增迭代不覆盖旧版本。题目的 `README.md` 按 review 模板写题目、结果、分析和版本说明；学习问答放在同目录的 `NOTES.md`。
+- 每个解法版本保留独立源码，新增迭代不覆盖旧版本。题目的 `README.md` 按 review 模板写题目、结果、评审（结论、代码、性能机会）和版本说明；学习问答放在同目录的 `NOTES.md`。
 - 已写入 `submissions.json` 的源码文件是冻结的：不格式化、不修 lint、不改注释，否则 `make records`（CI 也会运行）会因 SHA-256 不符而失败。需要改动时新建版本文件；冻结文件里的 lint 问题在 `pyproject.toml` 的 per-file-ignores 中忽略。
 - 提交元数据只保存必要字段：ID、GPU、语言、状态、时间、metrics、版本和源码匹配证据。保留原始 UTC 时间，显示时间注明时区。源码的精确 SHA-256 与经过归一化的匹配要区分。
 - H100 与其他 GPU 的结果分开记录。相同代码重新测量不记作新优化；percentile 是查询快照，不是永久固定的排名。

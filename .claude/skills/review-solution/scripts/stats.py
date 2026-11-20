@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Summarize solutions/<challenge>/submissions.json for a review.
 
-Prints, per GPU, a Markdown results table and a verdict on whether each
-version is distinguishable from the previous one. Every number in a review
-should come from this output, so that nothing is retyped or estimated.
+A review looks at one GPU. This script picks it from the submission history
+(or takes it as the second argument), then prints a Markdown results table,
+whether each version is distinguishable from the previous one, and the
+latency a single new submission must beat to count as an improvement. Every
+number in a review should come from this output, so that nothing is retyped
+or estimated.
+
+Exit codes: 0 done, 1 unreadable records, 2 usage, 3 the target GPU is
+ambiguous and the user has to choose.
 
 Standard library only, Python 3.9+, no network and no credentials.
 """
@@ -38,6 +44,34 @@ def ms(value):
 
 def percent(value):
     return str(value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)) + "%"
+
+
+def pick_gpu(submissions):
+    """Return (history line, target GPU or None, reason).
+
+    The target is the GPU the user has been working on: the one with the most
+    submissions, provided the latest submission is on it too. Anything less
+    clear is left to the user.
+    """
+    counts, latest = {}, {}
+    for entry in submissions:
+        gpu = entry.get("accelerator")
+        if not gpu:
+            continue
+        counts[gpu] = counts.get(gpu, 0) + 1
+        latest[gpu] = max(latest.get(gpu, ""), str(entry.get("createdAt") or ""))
+    if not counts:
+        return "提交历史：没有记录。", None, "没有提交记录"
+    order = sorted(counts, key=lambda gpu: (-counts[gpu], gpu))
+    history = "；".join(
+        f"{gpu} {counts[gpu]} 次（最近 {latest[gpu][:10] or '未知'}）" for gpu in order
+    )
+    most = [gpu for gpu in order if counts[gpu] == counts[order[0]]]
+    newest = max(latest, key=lambda gpu: latest[gpu])
+    if len(most) == 1 and most[0] == newest:
+        return f"提交历史：{history}。", newest, "提交最多，最近一次提交也在这个 GPU 上"
+    reason = f"提交最多的是 {'、'.join(most)}，最近一次提交在 {newest}"
+    return f"提交历史：{history}。", None, reason
 
 
 def summarize(submissions):
@@ -128,6 +162,14 @@ def report(gpu, versions, skipped, first_version, base_count):
             )
             verdict = "不超过波动 → 未能区分"
         lines.append(f"`{older}` → `{newer}`：{detail}，{verdict}。")
+    # Submissions are rationed, so the next version gets one. This is the
+    # latency it must beat for that single result to mean something.
+    newest = names[-1]
+    best = min(latency for latency, _ in versions[newest])
+    lines.append(
+        f"单次提交的门槛：下一版要低于 {ms(best * (1 - noise / 100))} ms "
+        f"才算比 `{newest}` 快（它的最好成绩 {ms(best)} ms 再快 {percent(noise)}）。"
+    )
     if skipped:
         lines.append(
             f"未计入：{skipped} 条记录（非 success、缺少 latency 或未对应到源码）。"
@@ -136,28 +178,39 @@ def report(gpu, versions, skipped, first_version, base_count):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("usage: stats.py solutions/<challenge>", file=sys.stderr)
+    if len(sys.argv) not in (2, 3):
+        print("usage: stats.py solutions/<challenge> [GPU]", file=sys.stderr)
         return 2
     path = Path(sys.argv[1]) / "submissions.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         groups, skipped, bases = summarize(data["submissions"])
+        history, target, reason = pick_gpu(data["submissions"])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"error: cannot read {path} ({type(error).__name__})", file=sys.stderr)
         return 1
-    if not groups:
-        print("没有可统计的成功提交。")
+    print(history)
+    if len(sys.argv) == 3:
+        target, reason = sys.argv[2], "由调用者指定"
+    if target is None:
+        print(f"目标 GPU 不明确：{reason}。请向用户确认，再用 SKU=<GPU> 重新运行。")
+        return 3
+    print(f"目标 GPU：{target}（{reason}）。\n")
+    if target not in groups:
+        print(f"{target} 上没有可统计的成功提交。")
         return 0
     first_version = min(
         (name for versions in groups.values() for name in versions), key=version_key
     )
-    # H100 is the repository's focus; other GPUs follow alphabetically.
-    for gpu in sorted(groups, key=lambda name: (name != "H100", name)):
-        print(
-            report(gpu, groups[gpu], skipped.get(gpu, 0), first_version, bases.get(gpu))
+    print(
+        report(
+            target,
+            groups[target],
+            skipped.get(target, 0),
+            first_version,
+            bases.get(target),
         )
-        print()
+    )
     return 0
 
 

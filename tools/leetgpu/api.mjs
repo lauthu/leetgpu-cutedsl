@@ -49,6 +49,13 @@ export class LeetGpuApi {
     const query = new URLSearchParams({ challengeId: challengeId(challenge), language, accelerator: gpu });
     return this.get(`/api/v1/submissions?${query}`);
   }
+  /** The platform's top entries for one language on one accelerator. */
+  leaderboard({ challenge, language, gpu }) {
+    if (!language || !gpu) throw new ApiError('Both --language and --gpu are required.');
+    const query = new URLSearchParams({ language, accelerator: gpu });
+    return this.get(`/api/v1/challenges/${challengeId(challenge)}/leaderboard?${query}`);
+  }
+  displayName() { return this.get('/api/v1/me/display-name'); }
   code(id) {
     if (!/^[A-Za-z0-9_-]+$/.test(id ?? '')) throw new ApiError('Invalid submission ID.');
     return this.get(`/api/v1/submissions/${encodeURIComponent(id)}/code`);
@@ -99,6 +106,15 @@ export function submissionRows(payload) {
   const rows = Array.isArray(payload) ? payload : payload?.submissions;
   if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
     throw new ApiError('Unexpected submissions response; use --json to inspect the server response.');
+  }
+  return rows;
+}
+
+/** Leaderboard entries as returned, fastest first. Names stay inside this module's callers. */
+export function leaderboardRows(payload) {
+  const rows = payload?.leaderboard;
+  if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== 'object' || !Number.isFinite(row.executionTime))) {
+    throw new ApiError('Unexpected leaderboard response.');
   }
   return rows;
 }

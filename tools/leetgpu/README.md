@@ -120,6 +120,7 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 ```sh
 ./tools/leetgpu/leetgpu challenges --json
 ./tools/leetgpu/leetgpu gpus --json
+./tools/leetgpu/leetgpu leaderboard --challenge 1_vector_add --gpu H100
 ./tools/leetgpu/leetgpu submissions latest --json
 ./tools/leetgpu/leetgpu submissions list --challenge 1 --language cute --gpu H100 --json
 ./tools/leetgpu/leetgpu submissions code SUBMISSION_ID --json
@@ -133,6 +134,7 @@ ssh user@remote-host 'cd ~/src/leetgpu-cutedsl && ./tools/leetgpu/leetgpu login 
 - `run` 对应网站的 Run 按钮：与 `submit` 使用同一连接和同一 private 载荷，只是 `action` 为 `run`，不写回执，退出码规则相同。它只执行题面的示例测试，用来看代码能否编译并跑通一个小例子；通过 `run` 不代表能通过 `submit` 的全部功能测试。它仍占用平台 GPU。
 - 不加 `--json` 时，`run`/`submit` 把平台输出（编译错误、测试结果）去除 ANSI 和控制字符后实时打印到 stderr，状态变化时打印一行 `[status]`；加 `--json` 时 stdout 只有 JSON，平台输出在 `events` 中。
 
+- `leaderboard` 列出平台上各语言在指定 GPU 上的前几名成绩（毫秒），最快的语言在前，`*` 标出自己的成绩。省略 `--language` 时查询该 GPU 支持的全部语言。它的 `--json` 与其他读取命令不同，不是原始响应：只输出名次、时间和 `mine` 标记，不包含任何人的名字。2026-11-19 已对真实服务验证。
 - `latest` 返回账户最近提交，不能按 GPU 筛选；查看 H100 使用显式带 challenge、language、gpu 的 `list`。`cute` 表示 CuTe DSL；用 `gpus` 查看当前 GPU/语言兼容性。
 - 读取命令的 `--json` 保留 API 原始结构和元数据，可能含账户字段；提交到仓库前应筛选必要字段。表格显示的 `metrics.executionTime` 单位为毫秒，percentile 是查询时排名。
 - 不保证 API 返回完整历史；没有实现未经确认的分页或全账户遍历。空结果只表示当前过滤条件下服务端没有返回记录。
@@ -156,6 +158,7 @@ HTTP 固定访问 `https://api.leetgpu.com`，GET 不跟随重定向，20 秒超
 |---|---|
 | `challenges` | `GET /api/v1/challenges` |
 | `gpus` | `GET /api/v1/settings/accelerated/accelerators` |
+| `leaderboard` | `GET /api/v1/challenges/<id>/leaderboard?language=…&accelerator=…`，每种语言一次；另用 `GET /api/v1/me/display-name` 标出自己的成绩 |
 | `submissions latest` | `GET /api/v1/submissions/latest` |
 | `submissions list` | `GET /api/v1/submissions?challengeId=…&language=…&accelerator=…` |
 | `submissions code` | `GET /api/v1/submissions/<id>/code` |

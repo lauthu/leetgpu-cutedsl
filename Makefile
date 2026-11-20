@@ -36,7 +36,7 @@ endif
 # and affects that window only.
 LOGIN_ARGS = $(LOGIN_FLAGS) $(if $(PROXY),--proxy "$(PROXY)")
 
-.PHONY: help setup stubs challenges fmt lint records test check login session preflight run submit history stats
+.PHONY: help setup stubs challenges fmt lint records test check login session preflight run submit history leaderboard stats
 
 help:
 	@echo 'Setup'
@@ -54,7 +54,8 @@ help:
 	@echo '  make run FILE=solutions/<challenge>/<version>.py      Run on the platform; not a submission'
 	@echo '  make submit FILE=solutions/<challenge>/<version>.py   Submit privately and write a receipt'
 	@echo '  make history CHALLENGE=<id-or-directory-name>         List submissions for LANGUAGE and GPU'
-	@echo '  make stats CHALLENGE=<directory-name>                 Summarize recorded submissions for a review (offline)'
+	@echo '  make leaderboard CHALLENGE=<id-or-directory-name>     Top LANGUAGE times on GPU, to see the distance to the best'
+	@echo '  make stats CHALLENGE=<directory-name> [SKU=<gpu>]     Summarize recorded submissions for a review (offline)'
 	@echo 'Options: GPU=$(GPU) LANGUAGE=$(LANGUAGE) CHALLENGE=<id-or-directory-name> (inferred from the directory of FILE)'
 
 setup: $(RUFF) stubs challenges
@@ -128,7 +129,14 @@ history: session
 	@test -n "$(CHALLENGE)" || { echo 'Usage: make history CHALLENGE=<id-or-directory-name> [GPU=$(GPU)]' >&2; exit 2; }
 	$(LEETGPU) submissions list --challenge "$(CHALLENGE)" --language $(LANGUAGE) --gpu $(GPU)
 
+# How far a solution is from the best in its own language on one GPU. This
+# repository practices CuTe DSL, so other languages are not the yardstick.
+leaderboard: session
+	@test -n "$(CHALLENGE)" || { echo 'Usage: make leaderboard CHALLENGE=<id-or-directory-name> [GPU=$(GPU)]' >&2; exit 2; }
+	@$(LEETGPU) leaderboard --challenge "$(CHALLENGE)" --gpu $(GPU) --language $(LANGUAGE)
+
 # Every number in a solution review comes from this summary of submissions.json.
+# The GPU under review is taken from the submission history; SKU=<gpu> overrides it.
 stats:
-	@test -n "$(CHALLENGE)" || { echo 'Usage: make stats CHALLENGE=<directory-name>, e.g. 1_vector_add' >&2; exit 2; }
-	@$(PYTHON) .claude/skills/review-solution/scripts/stats.py "solutions/$(CHALLENGE)"
+	@test -n "$(CHALLENGE)" || { echo 'Usage: make stats CHALLENGE=<directory-name> [SKU=<gpu>], e.g. 1_vector_add' >&2; exit 2; }
+	@$(PYTHON) .claude/skills/review-solution/scripts/stats.py "solutions/$(CHALLENGE)" $(SKU)

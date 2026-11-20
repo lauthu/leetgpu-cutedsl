@@ -96,3 +96,18 @@ test('an official folder name carries the challenge ID and must exist in the lis
   assert.throws(() => findChallenge(list, ['7_no_title']), /not in the LeetGPU challenge list/u);
   for (const name of ['0_zero', '01_padded', '2_Upper', '2-matrix', '_2_x', '2_']) assert.equal(findChallenge(list, [name]), null);
 });
+
+test('leaderboard requests carry both filters and malformed responses are refused', async () => {
+  const { LeetGpuApi, leaderboardRows } = await import('./api.mjs');
+  const calls = [];
+  const api = new LeetGpuApi('token', async url => { calls.push(String(url)); return Response.json({ leaderboard: [] }); });
+  await api.leaderboard({ challenge: '2', language: 'cute', gpu: 'A100-80GB' });
+  assert.deepEqual(calls, ['https://api.leetgpu.com/api/v1/challenges/2/leaderboard?language=cute&accelerator=A100-80GB']);
+  assert.throws(() => api.leaderboard({ challenge: '2', language: 'cute' }), /required/u);
+  assert.throws(() => api.leaderboard({ challenge: 'two', language: 'cute', gpu: 'H100' }), /positive integer/u);
+  assert.deepEqual(leaderboardRows({ leaderboard: [] }), []);
+  assert.equal(leaderboardRows({ leaderboard: [{ displayName: 'a', executionTime: 0 }] }).length, 1);
+  for (const payload of [null, {}, { leaderboard: 'x' }, { leaderboard: [null] }, { leaderboard: [{ executionTime: '0.1' }] }, { leaderboard: [{ displayName: 'a' }] }]) {
+    assert.throws(() => leaderboardRows(payload), /Unexpected leaderboard response/u);
+  }
+});

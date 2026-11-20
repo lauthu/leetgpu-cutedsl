@@ -28,6 +28,8 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 - GPU 默认是 `H100`，用 `GPU=B200` 这样的参数覆盖。
 - `run` 只执行题面的示例测试，用来看编译错误和一个小例子的结果；只有 `submit` 跑全部测试并产生带 latency 的提交记录。两者都占用平台 GPU。
 - `run` 和 `submit` 会先在本地检查语法错误和未定义名称，检查失败时不联网。
+- `make leaderboard CHALLENGE=1_vector_add` 列出 CuTe 在该 GPU 上的前几名成绩，用来看离最好还有多远。
+- LeetGPU 每天的提交有配额，所以不重复提交同一份代码，每次提交都应该是一个值得一试的新版本。
 - `make help` 列出全部目标。
 
 保持登录、自动续期、历史查询和 `run` 都已在 2026-11-19 用真实账号验证，详情见[工具 README](tools/leetgpu/README.md)。
@@ -37,7 +39,7 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 1. 新题目先建目录 `solutions/<id>_<name>/`，名字照抄 `.cache/leetgpu-challenges/challenges/<难度>/` 下的官方目录，例如 `2_matrix_multiplication`。那里还有题面、起始代码、容差和性能测试规模。
 2. 新建 `vN_<说明>.py`，不覆盖旧版本。
 3. 反复 `make run FILE=...` 直到通过，再 `make submit FILE=...`。
-4. 让 agent review 这道题，例如"review 1_vector_add"。它会拉取提交历史、更新 `submissions.json`，并按固定模板重写该题的 `README.md`。流程和模板在 [.claude/skills/review-solution/](.claude/skills/review-solution/)。
+4. 让 agent review 这道题，例如"review 1_vector_add"。Review 评审每个版本的代码，对照 CuTe 在目标 GPU 上的排行榜找出差距和下一步的性能机会，同时同步提交历史，并按固定模板重写该题的 `README.md`。它不花提交配额。流程和模板在 [.claude/skills/review-solution/](.claude/skills/review-solution/)。
 5. 运行 `make check`，然后开 PR。
 
 ## 登录
@@ -67,8 +69,8 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 | 路径 | 内容 |
 | --- | --- |
-| `solutions/<id>_<name>/` | `README.md`（题目、结果、分析、版本说明）、`NOTES.md`（学习问答）、`submissions.json`（提交记录）和各版本源码 |
-| `.claude/skills/review-solution/` | review 的流程、写作规则、README 模板和统计脚本（`make stats`） |
+| `solutions/<id>_<name>/` | `README.md`（题目、结果、评审、版本说明）、`NOTES.md`（学习问答）、`submissions.json`（提交记录）和各版本源码 |
+| `.claude/skills/review-solution/` | review（代码评审和性能机会）的流程、写作规则、README 模板和统计脚本（`make stats`） |
 | `tools/leetgpu/` | 非官方 LeetGPU CLI：认证、历史查询、运行和提交，无 npm 依赖 |
 | `tools/check_records.py` | 校验已记录源码的 SHA-256 |
 | `Makefile` | 上面所有命令的入口，人、VS Code 任务和 agent 共用 |
@@ -80,7 +82,7 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 ## 约定
 
-- 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。
+- 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。评审只针对一个 GPU（从提交历史判断），只与 CuTe 的成绩比较。
 - 已写入 `submissions.json` 的源码文件是冻结的，不格式化也不修改。`make check` 和 CI 会校验它的 SHA-256；要改动就新建版本。
 - 评测结果只引用平台记录。H100 与其他 GPU 分开记录，同一份代码的重复测量不算新的优化，percentile 是查询时的快照。
 - 平台记录尚未取得，或尚未与源码对应时，明确标为“待同步”。
