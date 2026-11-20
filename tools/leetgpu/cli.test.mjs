@@ -643,3 +643,43 @@ test('leaderboard refuses missing or unsupported targets before asking for any l
     assert.match(result.stderr, /login/u);
   }, { authenticated: false });
 });
+
+// Stands in for Chrome: records its pid inside the profile it was given, then waits to be stopped.
+const fakeChromeSource = `#!/bin/sh
+for argument in "$@"; do
+  case "$argument" in --user-data-dir=*) echo $$ > "\${argument#--user-data-dir=}/started" ;; esac
+done
+exec sleep 600
+`;
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  test(`login --browser interrupted by ${signal} stops its Chrome and deletes the temporary profile`, async () => {
+    await withFixture(async fixture => {
+      const temporary = join(fixture.directory, 'tmp');
+      const fakeChrome = join(fixture.directory, 'fake-chrome');
+      await mkdir(temporary);
+      await writeFile(fakeChrome, fakeChromeSource, { mode: 0o755 });
+      const child = spawn(process.execPath, ['--input-type=module', '-e', scriptFor(['login', '--browser'])], {
+        env: { ...fixture.env, LEETGPU_HISTORY_CHROME: fakeChrome, TMPDIR: temporary }, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      const exited = new Promise(resolve => { child.once('exit', (code, exitSignal) => resolve({ code, exitSignal })); });
+      // Interrupt only once the stand-in is running inside its temporary profile.
+      let browserPid;
+      for (const deadline = Date.now() + 10000; browserPid === undefined && Date.now() < deadline;) {
+        for (const name of await readdir(temporary)) {
+          try { browserPid = Number(await readFile(join(temporary, name, 'started'), 'utf8')); } catch { /* Not started yet. */ }
+        }
+        if (browserPid === undefined) await new Promise(resolve => { setTimeout(resolve, 50); });
+      }
+      assert.ok(browserPid > 0, stderr);
+      child.kill(signal);
+      assert.deepEqual(await exited, { code: 1, exitSignal: null }, stderr);
+      assert.match(stderr, /login canceled/u);
+      assert.deepEqual(await readdir(temporary), []);
+      assert.throws(() => process.kill(browserPid, 0), { code: 'ESRCH' });
+    }, { authenticated: false });
+  });
+}

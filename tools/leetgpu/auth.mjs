@@ -403,8 +403,11 @@ export async function browserLogin({
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('LeetGPU login timed out. Run login again to retry.')), timeoutMs);
   const interrupt = () => controller.abort(new Error('LeetGPU login canceled.'));
-  process.once('SIGINT', interrupt);
-  process.once('SIGTERM', interrupt);
+  // SIGHUP as well: a closed terminal or a dropped SSH connection would otherwise
+  // end the process before the cleanup below, leaving Chrome running and its
+  // temporary profile, with the session in it, on disk.
+  const interruptSignals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const signal of interruptSignals) process.once(signal, interrupt);
   let browser;
   try {
     const fallback = input?.isTTY ? 'quit that Chrome or press Enter here' : 'quit that Chrome';
@@ -424,8 +427,7 @@ export async function browserLogin({
     });
   } finally {
     clearTimeout(timer);
-    process.removeListener('SIGINT', interrupt);
-    process.removeListener('SIGTERM', interrupt);
+    for (const signal of interruptSignals) process.removeListener(signal, interrupt);
     try {
       await stopOwnedBrowser(browser);
     } finally {
