@@ -1,0 +1,138 @@
+{
+  "submissions": [
+    {
+      "id": "3a0f4fd7-218b-400e-a551-9f7260edcc58",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-19T15:34:02.399526Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 14.30547,
+        "percentile": 75,
+        "rankedCount": 12
+      },
+      "sourceVersion": "v1.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "1734455c299d949e4d238af7f2ec0459a1d95588e7fb67bc937c04a450cd1fcf",
+        "repositoryCode": "9d4d937a0700a39f5138b8a4b60cc44b352d54f9553bd0ba4cd41378f065cd02"
+      },
+      "sourceMatch": {
+        "exactBytes": false,
+        "method": "python-ast-after-inlining-four-module-integer-constants-and-renaming-two-locals"
+      }
+    },
+    {
+      "id": "618d2eda-5aa2-4075-8f6e-4381a6fcb6fc",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-20T10:47:58.481262Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 21.42418,
+        "percentile": 66.67,
+        "rankedCount": 12
+      },
+      "sourceVersion": "v2_tiled.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "19580cd7a24948be8cfaeb11ff049a7c494585a8829497ba805b58cbb39e9000",
+        "repositoryCode": "19580cd7a24948be8cfaeb11ff049a7c494585a8829497ba805b58cbb39e9000"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "90e4329c-d882-4343-ac57-b8772e933c39",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "timeout",
+      "createdAt": "2026-11-20T14:43:17.616548Z",
+      "challengeId": 2,
+      "metrics": {},
+      "sourceVersion": "v3_pipelined.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "5efef92556ac918fb06ac5cfd9e03d15092b6fcf5b6fbef845ef210903d9ca9b",
+        "repositoryCode": "5efef92556ac918fb06ac5cfd9e03d15092b6fcf5b6fbef845ef210903d9ca9b"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "fe6071f1-7a65-4191-aaa8-797eea48cb0e",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-20T14:44:18.920433Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 29.01978,
+        "percentile": 58.33,
+        "rankedCount": 12
+      },
+      "sourceVersion": "v3_pipelined.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "5efef92556ac918fb06ac5cfd9e03d15092b6fcf5b6fbef845ef210903d9ca9b",
+        "repositoryCode": "5efef92556ac918fb06ac5cfd9e03d15092b6fcf5b6fbef845ef210903d9ca9b"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "c4f6e7a4-9148-4605-845e-fcbd11ab3e26",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-20T15:12:51.659048Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 9.59195,
+        "percentile": 83.33,
+        "rankedCount": 12
+      },
+      "sourceVersion": "v4_aligned.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "d6ab8655b7dc061c3654100ab8a99b717fced309c6ccb69e0c239ea3ff34d042",
+        "repositoryCode": "d6ab8655b7dc061c3654100ab8a99b717fced309c6ccb69e0c239ea3ff34d042"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "ab0e97b8-fe23-48d2-8a65-7a482e1409d3",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-20T16:07:21.741521Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 6.56242,
+        "percentile": 91.67,
+        "rankedCount": 12
+      },
+      "sourceVersion": "v5_tensor_core.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "c3145b839b7859f93b79e675711161b6fa88f1c92f7d8b141f93f72b4b8f752f",
+        "repositoryCode": "c3145b839b7859f93b79e675711161b6fa88f1c92f7d8b141f93f72b4b8f752f"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    }
+  ]
+}

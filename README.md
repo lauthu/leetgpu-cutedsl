@@ -11,6 +11,7 @@ Coding agents 请先读 [AGENTS.md](AGENTS.md)：认证、提交授权和记录�
 | Challenge | 版本演进 |
 | --- | --- |
 | [Vector Addition](solutions/1_vector_add/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
+| [Matrix Multiplication](solutions/2_matrix_multiplication/) | 手写下标 → tiled copy 与 tiled MMA → `cp.async` 流水线 → FP16 tensor core |
 
 ## 快速开始
 
@@ -82,6 +83,8 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 ## 约定
 
+- Latency 是平台在性能测试上 15 次计时的中位数，包含 `solve` 调用的 Python 启动开销和一次设备同步，不包含编译。编译、全部测试和计时合起来约有 40 秒的时限，超过就是 `timeout`。出处是[官方仓库](https://github.com/AlphaGPU/leetgpu-challenges) README 的 FAQ。
+- 每道题都一样的规则（计时方式、配额、怎样才算更快）只写在本文件和 review skill 里，题目的 `README.md` 不重复它们。
 - 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。评审只针对一个 GPU（从提交历史判断），只与 CuTe 的成绩比较。
 - 已写入 `submissions.json` 的源码文件是冻结的，不格式化也不修改。`make check` 和 CI 会校验它的 SHA-256；要改动就新建版本。
 - 评测结果只引用平台记录。H100 与其他 GPU 分开记录，同一份代码的重复测量不算新的优化，percentile 是查询时的快照。
