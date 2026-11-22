@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Summarize solutions/<challenge>/submissions.json for a review.
 
-A review looks at one GPU. This script picks it from the submission history
-(or takes it as the second argument), then prints a Markdown results table,
-whether each version is distinguishable from the previous one, and the
-latency a single new submission must beat to count as an improvement. Every
-number in a review should come from this output, so that nothing is retyped
-or estimated.
+A review covers every GPU that has submissions, each one on its own. For each
+GPU (or only the one given as the second argument) this script prints a
+Markdown results table, whether each version is distinguishable from the
+previous one on that GPU, and the latency a single new submission must beat
+there to count as an improvement. Latencies of different GPUs are never
+compared. Every number in a review should come from this output, so that
+nothing is retyped or estimated.
 
-Exit codes: 0 done, 1 unreadable records, 2 usage, 3 the target GPU is
-ambiguous and the user has to choose.
+Exit codes: 0 done, 1 unreadable records, 2 usage.
 
 Standard library only, Python 3.9+, no network and no credentials.
 """
@@ -46,12 +46,11 @@ def percent(value):
     return str(value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)) + "%"
 
 
-def pick_gpu(submissions):
-    """Return (history line, target GPU or None, reason).
+def history(submissions):
+    """Return (history line, GPUs with submissions).
 
-    The target is the GPU the user has been working on: the one with the most
-    submissions, provided the latest submission is on it too. Anything less
-    clear is left to the user.
+    The GPUs come most-submitted first; ties are broken by name. A review
+    covers all of them.
     """
     counts, latest = {}, {}
     for entry in submissions:
@@ -61,17 +60,12 @@ def pick_gpu(submissions):
         counts[gpu] = counts.get(gpu, 0) + 1
         latest[gpu] = max(latest.get(gpu, ""), str(entry.get("createdAt") or ""))
     if not counts:
-        return "提交历史：没有记录。", None, "没有提交记录"
+        return "提交历史：没有记录。", []
     order = sorted(counts, key=lambda gpu: (-counts[gpu], gpu))
-    history = "；".join(
+    line = "；".join(
         f"{gpu} {counts[gpu]} 次（最近 {latest[gpu][:10] or '未知'}）" for gpu in order
     )
-    most = [gpu for gpu in order if counts[gpu] == counts[order[0]]]
-    newest = max(latest, key=lambda gpu: latest[gpu])
-    if len(most) == 1 and most[0] == newest:
-        return f"提交历史：{history}。", newest, "提交最多，最近一次提交也在这个 GPU 上"
-    reason = f"提交最多的是 {'、'.join(most)}，最近一次提交在 {newest}"
-    return f"提交历史：{history}。", None, reason
+    return f"提交历史：{line}。", order
 
 
 def summarize(submissions):
@@ -185,32 +179,29 @@ def main():
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         groups, skipped, bases = summarize(data["submissions"])
-        history, target, reason = pick_gpu(data["submissions"])
+        line, gpus = history(data["submissions"])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"error: cannot read {path} ({type(error).__name__})", file=sys.stderr)
         return 1
-    print(history)
+    print(line)
     if len(sys.argv) == 3:
-        target, reason = sys.argv[2], "由调用者指定"
-    if target is None:
-        print(f"目标 GPU 不明确：{reason}。请向用户确认，再用 SKU=<GPU> 重新运行。")
-        return 3
-    print(f"目标 GPU：{target}（{reason}）。\n")
-    if target not in groups:
-        print(f"{target} 上没有可统计的成功提交。")
+        gpus = [sys.argv[2]]
+        print(f"评审范围：{gpus[0]}（由调用者指定）。")
+    elif gpus:
+        print(f"评审范围：{'、'.join(gpus)}（有提交记录的全部 GPU，各自分开）。")
+    if not groups:
         return 0
     first_version = min(
         (name for versions in groups.values() for name in versions), key=version_key
     )
-    print(
-        report(
-            target,
-            groups[target],
-            skipped.get(target, 0),
-            first_version,
-            bases.get(target),
+    for gpu in gpus:
+        print()
+        if gpu not in groups:
+            print(f"### {gpu}\n\n{gpu} 上没有可统计的成功提交。")
+            continue
+        print(
+            report(gpu, groups[gpu], skipped.get(gpu, 0), first_version, bases.get(gpu))
         )
-    )
     return 0
 
 

@@ -11,6 +11,7 @@ Coding agents 请先读 [AGENTS.md](AGENTS.md)：认证、提交授权和记录�
 | Challenge | 版本演进 |
 | --- | --- |
 | [Vector Addition](solutions/1_vector_add/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
+| [Matrix Multiplication](solutions/2_matrix_multiplication/) | 手写下标 → tiled copy 与 tiled MMA → `cp.async` 流水线 → FP16 tensor core → warpgroup MMA（H100）→ tcgen05 MMA 与 tensor memory（B200） |
 
 ## 快速开始
 
@@ -39,7 +40,7 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 1. 新题目先建目录 `solutions/<id>_<name>/`，名字照抄 `.cache/leetgpu-challenges/challenges/<难度>/` 下的官方目录，例如 `2_matrix_multiplication`。那里还有题面、起始代码、容差和性能测试规模。
 2. 新建 `vN_<说明>.py`，不覆盖旧版本。
 3. 反复 `make run FILE=...` 直到通过，再 `make submit FILE=...`。
-4. 让 agent review 这道题，例如"review 1_vector_add"。Review 评审每个版本的代码，对照 CuTe 在目标 GPU 上的排行榜找出差距和下一步的性能机会，同时同步提交历史，并按固定模板重写该题的 `README.md`。它不花提交配额。流程和模板在 [.claude/skills/review-solution/](.claude/skills/review-solution/)。
+4. 让 agent review 这道题，例如"review 1_vector_add"。Review 评审每个版本的代码，在每个有提交的 GPU 上对照 CuTe 的排行榜找出差距和下一步的性能机会，同时同步提交历史，并按固定模板重写该题的 `README.md`。它不花提交配额。流程和模板在 [.claude/skills/review-solution/](.claude/skills/review-solution/)。
 5. 运行 `make check`，然后开 PR。
 
 ## 登录
@@ -82,7 +83,9 @@ make check    # lint + 提交记录校验 + 工具测试，不需要登录或 GP
 
 ## 约定
 
-- 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。评审只针对一个 GPU（从提交历史判断），只与 CuTe 的成绩比较。
+- Latency 是平台在性能测试上 15 次计时的中位数，包含 `solve` 调用的 Python 启动开销和一次设备同步，不包含编译。编译、全部测试和计时合起来约有 40 秒的时限，超过就是 `timeout`。出处是[官方仓库](https://github.com/AlphaGPU/leetgpu-challenges) README 的 FAQ。
+- 每道题都一样的规则（计时方式、配额、怎样才算更快）只写在本文件和 review skill 里，题目的 `README.md` 不重复它们。
+- 题目的 `README.md` 只写数据支持的结论：版本之间的差距不超过同一份代码重复提交的波动时，写"未能区分"。有提交的每个 GPU 分开评审，不同 GPU 的 latency 不放在一起比较；只与 CuTe 的成绩比较。
 - 已写入 `submissions.json` 的源码文件是冻结的，不格式化也不修改。`make check` 和 CI 会校验它的 SHA-256；要改动就新建版本。
 - 评测结果只引用平台记录。H100 与其他 GPU 分开记录，同一份代码的重复测量不算新的优化，percentile 是查询时的快照。
 - 平台记录尚未取得，或尚未与源码对应时，明确标为“待同步”。

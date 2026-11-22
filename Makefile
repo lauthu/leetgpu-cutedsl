@@ -136,7 +136,7 @@ leaderboard: session
 	@$(LEETGPU) leaderboard --challenge "$(CHALLENGE)" --gpu $(GPU) --language $(LANGUAGE)
 
 # Every number in a solution review comes from this summary of submissions.json.
-# The GPU under review is taken from the submission history; SKU=<gpu> overrides it.
+# Every GPU with submissions is summarized on its own; SKU=<gpu> limits it to one.
 stats:
 	@test -n "$(CHALLENGE)" || { echo 'Usage: make stats CHALLENGE=<directory-name> [SKU=<gpu>], e.g. 1_vector_add' >&2; exit 2; }
 	@$(PYTHON) .claude/skills/review-solution/scripts/stats.py "solutions/$(CHALLENGE)" $(SKU)
