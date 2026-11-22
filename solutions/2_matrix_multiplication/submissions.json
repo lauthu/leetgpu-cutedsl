@@ -9,8 +9,8 @@
       "challengeId": 2,
       "metrics": {
         "executionTime": 14.30547,
-        "percentile": 75,
-        "rankedCount": 12
+        "percentile": 69.23,
+        "rankedCount": 13
       },
       "sourceVersion": "v1.py",
       "hash": {
@@ -32,8 +32,8 @@
       "challengeId": 2,
       "metrics": {
         "executionTime": 21.42418,
-        "percentile": 66.67,
-        "rankedCount": 12
+        "percentile": 61.54,
+        "rankedCount": 13
       },
       "sourceVersion": "v2_tiled.py",
       "hash": {
@@ -74,8 +74,8 @@
       "challengeId": 2,
       "metrics": {
         "executionTime": 29.01978,
-        "percentile": 58.33,
-        "rankedCount": 12
+        "percentile": 53.85,
+        "rankedCount": 13
       },
       "sourceVersion": "v3_pipelined.py",
       "hash": {
@@ -97,8 +97,8 @@
       "challengeId": 2,
       "metrics": {
         "executionTime": 9.59195,
-        "percentile": 83.33,
-        "rankedCount": 12
+        "percentile": 76.92,
+        "rankedCount": 13
       },
       "sourceVersion": "v4_aligned.py",
       "hash": {
@@ -120,14 +120,60 @@
       "challengeId": 2,
       "metrics": {
         "executionTime": 6.56242,
-        "percentile": 91.67,
-        "rankedCount": 12
+        "percentile": 84.62,
+        "rankedCount": 13
       },
       "sourceVersion": "v5_tensor_core.py",
       "hash": {
         "algorithm": "sha256",
         "submittedCode": "c3145b839b7859f93b79e675711161b6fa88f1c92f7d8b141f93f72b4b8f752f",
         "repositoryCode": "c3145b839b7859f93b79e675711161b6fa88f1c92f7d8b141f93f72b4b8f752f"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "39333a77-f6e1-4c27-9016-b79d3f301c6d",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-22T12:01:16.808398Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 3.61978,
+        "percentile": 92.31,
+        "rankedCount": 13
+      },
+      "sourceVersion": "v6_warpgroup.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "d56126edfa5337b1e73e1359f630ca400bec66c86a811f86cc81399c691a4001",
+        "repositoryCode": "d56126edfa5337b1e73e1359f630ca400bec66c86a811f86cc81399c691a4001"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "e0ab92f0-8106-4316-95c2-d28249454ee2",
+      "language": "cute",
+      "accelerator": "B200",
+      "status": "success",
+      "createdAt": "2026-11-22T12:21:55.27215Z",
+      "challengeId": 2,
+      "metrics": {
+        "executionTime": 1.78198,
+        "percentile": 97.5,
+        "rankedCount": 40
+      },
+      "sourceVersion": "v7_tcgen05.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "fc1fb6b65f6baa01daad0403173e276b751eaed89360e062b4db839f5394ec7d",
+        "repositoryCode": "fc1fb6b65f6baa01daad0403173e276b751eaed89360e062b4db839f5394ec7d"
       },
       "sourceMatch": {
         "exactBytes": true,
