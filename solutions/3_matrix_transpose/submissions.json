@@ -1,0 +1,27 @@
+{
+  "submissions": [
+    {
+      "id": "9c6e3fbc-6d84-424f-955b-f944ef032525",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-22T15:07:31.744079Z",
+      "challengeId": 3,
+      "metrics": {
+        "executionTime": 0.26903,
+        "percentile": 87.5,
+        "rankedCount": 8
+      },
+      "sourceVersion": "v1.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "55c3d29557172f7a670bd698adc96004e57c12950147985bc745a91a83cd7307",
+        "repositoryCode": "55c3d29557172f7a670bd698adc96004e57c12950147985bc745a91a83cd7307"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    }
+  ]
+}

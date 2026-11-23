@@ -12,6 +12,7 @@ Coding agents 请先读 [AGENTS.md](AGENTS.md)：认证、提交授权和记录�
 | --- | --- |
 | [Vector Addition](solutions/1_vector_add/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
 | [Matrix Multiplication](solutions/2_matrix_multiplication/) | 手写下标 → tiled copy 与 tiled MMA → `cp.async` 流水线 → FP16 tensor core → warpgroup MMA（H100）→ tcgen05 MMA 与 tensor memory（B200） |
+| [Matrix Transpose](solutions/3_matrix_transpose/) | 32 × 32 的 tile 经 smem 拷贝 → 输出沿连续方向写（未提交） |
 
 ## 快速开始
 
