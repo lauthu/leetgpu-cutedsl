@@ -56,4 +56,4 @@ CuTe 排行榜前几名：0.26903、0.3454、0.35298 ms，v1 排第 1。
 
 `v1.py` 与平台上的代码逐字节相同。
 
-提交记录见 [submissions.json](submissions.json)。
+提交记录见 [submissions.json](submissions.json)，学习中的问答见 [NOTES.md](NOTES.md)。

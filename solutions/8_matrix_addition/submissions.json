@@ -1,0 +1,96 @@
+{
+  "submissions": [
+    {
+      "id": "1d0345ab-c5fe-445f-a606-0e448d059a4a",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-23T07:12:30.113024Z",
+      "challengeId": 8,
+      "metrics": {
+        "executionTime": 0.13778,
+        "percentile": 85.71,
+        "rankedCount": 7
+      },
+      "sourceVersion": "v1.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "801c17a89294cdc516c25ad5cbeff5dbc5744e19e8b6d657783aa23c1dee44c3",
+        "repositoryCode": "801c17a89294cdc516c25ad5cbeff5dbc5744e19e8b6d657783aa23c1dee44c3"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "15f2be66-446f-4580-9a08-36a98557c8e6",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-23T07:39:12.981057Z",
+      "challengeId": 8,
+      "metrics": {
+        "executionTime": 0.18821,
+        "percentile": 71.43,
+        "rankedCount": 7
+      },
+      "sourceVersion": "v2_per_thread.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "166afa1174478229993086b3045b3945f2e1794a6405f9ed34855dea3c8bc927",
+        "repositoryCode": "166afa1174478229993086b3045b3945f2e1794a6405f9ed34855dea3c8bc927"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "40f5d37f-a481-4837-b130-6b6a197c418b",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-23T07:56:43.991298Z",
+      "challengeId": 8,
+      "metrics": {
+        "executionTime": 0.21289,
+        "percentile": 57.14,
+        "rankedCount": 7
+      },
+      "sourceVersion": "v2_per_thread.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "166afa1174478229993086b3045b3945f2e1794a6405f9ed34855dea3c8bc927",
+        "repositoryCode": "166afa1174478229993086b3045b3945f2e1794a6405f9ed34855dea3c8bc927"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    },
+    {
+      "id": "b75b4877-b94d-481e-b94c-14715073af97",
+      "language": "cute",
+      "accelerator": "H100",
+      "status": "success",
+      "createdAt": "2026-11-23T07:57:23.15606Z",
+      "challengeId": 8,
+      "metrics": {
+        "executionTime": 0.21318,
+        "percentile": 42.86,
+        "rankedCount": 7
+      },
+      "sourceVersion": "v3_minimal.py",
+      "hash": {
+        "algorithm": "sha256",
+        "submittedCode": "ddcda83ec653e52ce28d5e8f8a558547f732ee01b8adc008a1b8a1ef6b0bd1fe",
+        "repositoryCode": "ddcda83ec653e52ce28d5e8f8a558547f732ee01b8adc008a1b8a1ef6b0bd1fe"
+      },
+      "sourceMatch": {
+        "exactBytes": true,
+        "method": "exact-bytes"
+      }
+    }
+  ]
+}
