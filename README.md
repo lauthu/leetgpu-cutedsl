@@ -13,6 +13,7 @@ Coding agents 请先读 [AGENTS.md](AGENTS.md)：认证、提交授权和记录�
 | [Vector Addition](solutions/1_vector_add/) | 逐线程标量 → layout、寄存器 fragment 与自动向量化 |
 | [Matrix Multiplication](solutions/2_matrix_multiplication/) | 手写下标 → tiled copy 与 tiled MMA → `cp.async` 流水线 → FP16 tensor core → warpgroup MMA（H100）→ tcgen05 MMA 与 tensor memory（B200） |
 | [Matrix Transpose](solutions/3_matrix_transpose/) | 32 × 32 的 tile 经 smem 拷贝 → 输出沿连续方向写（未提交） |
+| [Color Inversion](solutions/7_color_inversion/) | 每线程一个像素、逐字节 → 像素当作 32-bit 字，一次 XOR |
 | [Matrix Addition](solutions/8_matrix_addition/) | 摊平成一维，复用 Vector Addition 的向量化内核 → 整理：按线程选择路径 → 去掉对齐处理和寄存器 Tensor |
 
 ## 快速开始
